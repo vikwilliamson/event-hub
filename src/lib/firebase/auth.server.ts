@@ -1,7 +1,8 @@
 import { getAdminAuth } from "./admin";
 import { cookies } from "next/headers";
+import { env } from "@/lib/env";
 
-const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "session";
+const SESSION_COOKIE_NAME = env.SESSION_COOKIE_NAME ?? "session";
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
 
 export type Session = {

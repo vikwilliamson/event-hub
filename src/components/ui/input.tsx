@@ -6,10 +6,12 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
   error?: string;
   /** Id of the error element for aria-describedby */
   errorId?: string;
+  /** Whether the field is required */
+  required?: boolean;
 }
 
 const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { className, error, errorId, id, "aria-invalid": ariaInvalid, ...props },
+  { className, error, errorId, id, required, "aria-invalid": ariaInvalid, ...props },
   ref,
 ) {
   const describedBy = [errorId].filter(Boolean).join(" ") || undefined;
@@ -28,6 +30,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       )}
       aria-invalid={ariaInvalid ?? (error ? true : undefined)}
       aria-describedby={describedBy}
+      aria-required={required}
       {...props}
     />
   );

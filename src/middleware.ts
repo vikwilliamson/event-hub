@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { env } from "@/lib/env";
 
-const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "session";
+const SESSION_COOKIE_NAME = env.SESSION_COOKIE_NAME ?? "session";
 
 /**
  * Protect /dashboard and below: require session cookie. Redirect to /login if missing.

@@ -125,6 +125,7 @@ export function EventForm() {
           errorId="event-title-error"
           autoComplete="off"
           maxLength={100}
+          required
         />
         {err("title") && <FieldError id="event-title-error">{err("title")}</FieldError>}
       </div>
@@ -137,11 +138,12 @@ export function EventForm() {
           id={DESCRIPTION_ID}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="What’s the event about?"
+          placeholder="What's the event about?"
           className="mt-1"
           error={err("description")}
           errorId="event-description-error"
           rows={4}
+          required
         />
         {err("description") && <FieldError id="event-description-error">{err("description")}</FieldError>}
       </div>
@@ -160,6 +162,7 @@ export function EventForm() {
           error={err("location")}
           errorId="event-location-error"
           autoComplete="off"
+          required
         />
         {err("location") && <FieldError id="event-location-error">{err("location")}</FieldError>}
       </div>
@@ -177,6 +180,7 @@ export function EventForm() {
             className="mt-1"
             error={err("date")}
             errorId="event-date-error"
+            required
           />
           {err("date") && <FieldError id="event-date-error">{err("date")}</FieldError>}
         </div>
@@ -192,6 +196,7 @@ export function EventForm() {
             className="mt-1"
             error={err("time")}
             errorId="event-time-error"
+            required
           />
           {err("time") && <FieldError id="event-time-error">{err("time")}</FieldError>}
         </div>
