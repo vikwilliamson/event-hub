@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useRsvp } from "@/hooks/use-rsvp";
 import Link from "next/link";
 
-interface RsvpButtonProps {
+export interface RsvpButtonProps {
   eventId: string;
   organizerId: string;
   className?: string;
