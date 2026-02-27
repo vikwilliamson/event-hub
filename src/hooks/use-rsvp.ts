@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { rsvpEvent, cancelRsvp, getMyRsvps } from "@/lib/actions/rsvp.actions";
+import { rsvpEvent, cancelRsvp, getMyRsvps, getUserRsvpStatus } from "@/lib/actions/rsvp.actions";
 import type { Rsvp } from "@/lib/firebase/types";
 
 export type RsvpStatus = "loading" | "authenticated" | "unauthenticated" | "error";
@@ -31,17 +31,19 @@ export function useRsvp(eventId: string, organizerId: string): UseRsvpState & Us
 
   // Check authentication status on mount
   useEffect(() => {
-    // For now, we'll determine auth status by attempting to call the server action
-    // In a real implementation, you might want to use Firebase Auth's onAuthStateChanged
     const checkAuth = async () => {
       try {
-        // Try to get my RSVPs to check if user is authenticated
+        // Check auth status efficiently with a lightweight call
         const result = await getMyRsvps();
         if (result.ok) {
           setStatus("authenticated");
           // Check if already RSVP'd to this specific event
-          // Note: This would require an additional server action to check specific event RSVP
-          // For now, we'll assume not RSVP'd and let the UI handle the check
+          const rsvpStatus = await getUserRsvpStatus(eventId, organizerId);
+          if (rsvpStatus.ok) {
+            setIsRsvped(rsvpStatus.data.isRsvped);
+          } else {
+            setError(rsvpStatus.error);
+          }
         } else {
           if (result.error.includes("redirect") || result.error.includes("login")) {
             setStatus("unauthenticated");

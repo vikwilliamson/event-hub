@@ -17,7 +17,7 @@ export type GetMyRsvpsResult =
   | { ok: false; error: string };
 
 /**
- * RSVP to an event. Uses deterministic doc ID to prevent duplicates.
+ * RSVP to an event. Uses transaction to prevent race conditions.
  * Updates event rsvpCount atomically.
  */
 export async function rsvpEvent(eventId: string, organizerId: string): Promise<RsvpResult> {
@@ -27,53 +27,51 @@ export async function rsvpEvent(eventId: string, organizerId: string): Promise<R
   }
 
   const userId = session.uid;
-  const rsvpId = `${eventId}_${userId}`;
 
   try {
-    // Check if already RSVP'd
-    const existingRsvp = await getUserRsvp(eventId, userId);
-    if (existingRsvp) {
-      return { ok: false, error: "You have already RSVP'd to this event" };
-    }
-
-    // Get event details for snapshot and validation
-    const eventSnap = await getEventRef(organizerId, eventId).get();
-    if (!eventSnap.exists) {
-      return { ok: false, error: "Event not found" };
-    }
-    const event = eventSnap.data()!;
-
-    // Create RSVP with deterministic ID
-    const rsvp: Rsvp = {
-      id: rsvpId,
-      eventId,
-      userId,
-      organizerId,
-      eventSnapshot: {
-        title: event.title,
-        startsAt: event.startsAt,
-        location: event.location,
-      },
-      createdAt: new Date(),
-      cancelledAt: null,
-    };
-
-    const db = getRsvpRef(eventId, userId).firestore;
+    const db = getRsvpRef(organizerId, eventId, userId).firestore;
     
-    // Use transaction to ensure atomicity
+    // Use transaction to ensure atomicity and prevent race conditions
     await db.runTransaction(async (transaction) => {
-      // Create RSVP
-      transaction.set(getRsvpRef(eventId, userId), rsvp);
-      
-      // Update event RSVP count
-      const eventRef = getEventRef(organizerId, eventId);
-      transaction.update(eventRef, {
+      // Check if already RSVP'd inside transaction
+      const existingRsvpSnap = await transaction.get(getRsvpRef(organizerId, eventId, userId));
+      if (existingRsvpSnap.exists && !existingRsvpSnap.data()!.cancelledAt) {
+        throw new Error("You have already RSVP'd to this event");
+      }
+
+      // Get event details for snapshot and validation
+      const eventSnap = await transaction.get(getEventRef(organizerId, eventId));
+      if (!eventSnap.exists) {
+        throw new Error("Event not found");
+      }
+      const event = eventSnap.data()!;
+
+      // Create RSVP with user ID as doc ID
+      const rsvp: Rsvp = {
+        id: userId,
+        eventId,
+        userId,
+        organizerId,
+        eventSnapshot: {
+          title: event.title,
+          startsAt: event.startsAt,
+          location: event.location,
+        },
+        createdAt: new Date(),
+        cancelledAt: null,
+      };
+
+      // Create RSVP and update event count atomically
+      transaction.set(getRsvpRef(organizerId, eventId, userId), rsvp);
+      transaction.update(getEventRef(organizerId, eventId), {
         rsvpCount: event.rsvpCount + 1,
         updatedAt: FieldValue.serverTimestamp(),
       });
     });
 
-    return { ok: true, data: { rsvp } };
+    // Return the created RSVP
+    const createdRsvp = await getUserRsvp(organizerId, eventId, userId);
+    return { ok: true, data: { rsvp: createdRsvp! } };
   } catch (err) {
     return {
       ok: false,
@@ -95,30 +93,29 @@ export async function cancelRsvp(eventId: string, organizerId: string): Promise<
 
   try {
     // Check if RSVP exists and is not cancelled
-    const existingRsvp = await getUserRsvp(eventId, userId);
+    const existingRsvp = await getUserRsvp(organizerId, eventId, userId);
     if (!existingRsvp) {
       return { ok: false, error: "No RSVP found for this event" };
     }
 
-    // Get event for rsvpCount update
-    const eventSnap = await getEventRef(organizerId, eventId).get();
-    if (!eventSnap.exists) {
-      return { ok: false, error: "Event not found" };
-    }
-    const event = eventSnap.data()!;
-
-    const db = getRsvpRef(eventId, userId).firestore;
+    const db = getRsvpRef(organizerId, eventId, userId).firestore;
     
     // Use transaction to ensure atomicity
     await db.runTransaction(async (transaction) => {
+      // Get event for rsvpCount update
+      const eventSnap = await transaction.get(getEventRef(organizerId, eventId));
+      if (!eventSnap.exists) {
+        throw new Error("Event not found");
+      }
+      const event = eventSnap.data()!;
+
       // Update RSVP with cancellation
-      transaction.update(getRsvpRef(eventId, userId), {
+      transaction.update(getRsvpRef(organizerId, eventId, userId), {
         cancelledAt: FieldValue.serverTimestamp(),
       });
       
       // Update event RSVP count (ensure it doesn't go below 0)
-      const eventRef = getEventRef(organizerId, eventId);
-      transaction.update(eventRef, {
+      transaction.update(getEventRef(organizerId, eventId), {
         rsvpCount: Math.max(0, event.rsvpCount - 1),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -147,6 +144,26 @@ export async function getMyRsvps(): Promise<GetMyRsvpsResult> {
   try {
     const rsvps = await getUserRsvps(session.uid);
     return { ok: true, data: { rsvps } };
+  } catch (err) {
+    return {
+      ok: false,
+      error: normalizeError(err).message,
+    };
+  }
+}
+
+/**
+ * Check if current user has RSVP'd to a specific event.
+ */
+export async function getUserRsvpStatus(eventId: string, organizerId: string): Promise<{ ok: true; data: { isRsvped: boolean } } | { ok: false; error: string }> {
+  const session = await getSession();
+  if (!session) {
+    return { ok: true, data: { isRsvped: false } };
+  }
+
+  try {
+    const rsvp = await getUserRsvp(organizerId, eventId, session.uid);
+    return { ok: true, data: { isRsvped: !!rsvp } };
   } catch (err) {
     return {
       ok: false,
