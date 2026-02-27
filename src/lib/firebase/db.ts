@@ -28,3 +28,14 @@ export async function getEvent(
   if (!snap.exists) return null;
   return snap.data() ?? null;
 }
+
+/**
+ * Get organizer display name for denormalization onto events.
+ * Returns a fallback if the document doesn't exist yet (e.g. first event).
+ */
+export async function getOrganizerDisplayName(organizerId: string): Promise<string> {
+  const db = getAdminFirestore();
+  const snap = await db.collection("organizers").doc(organizerId).get();
+  const name = snap.exists ? (snap.data() as { displayName?: string } | undefined)?.displayName : undefined;
+  return (name && String(name).trim()) || "Organizer";
+}
