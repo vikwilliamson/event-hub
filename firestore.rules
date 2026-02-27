@@ -1,68 +1,19 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-    
-    function isOrganizer(organizerId) {
-      return isAuthenticated() && request.auth.uid == organizerId;
-    }
-    
-    // Organizer collections
-    match /organizers/{organizerId} {
-      // Only authenticated users can read organizers
-      allow read: if isAuthenticated();
-      
-      // Only the organizer themselves can write their data
-      allow write: if isOrganizer(organizerId);
-      
-      // Events subcollection
-      match /events/{eventId} {
-        // Anyone can read published events
-        allow read: if resource.data.status == 'published';
-        
-        // Organizer can read/write their own events (including drafts)
-        allow read, write: if isOrganizer(organizerId);
-        
-        // RSVPs subcollection
-        match /rsvps/{rsvpId} {
-          // Only authenticated users can create RSVPs
-          allow create: if isAuthenticated() && 
-            isOwner(rsvpId) && 
-            resource.data.userId == request.auth.uid &&
-            resource.data.eventId == eventId &&
-            resource.data.organizerId == organizerId;
-          
-          // Users can only read their own RSVPs
-          allow read: if isOwner(rsvpId);
-          
-          // Users can only update their own RSVPs (for cancellation)
-          allow update: if isOwner(rsvpId) && 
-            request.writeFields.size() == 1 && 
-            request.writeFields.has('cancelledAt');
-          
-          // Users can delete their own RSVPs
-          allow delete: if isOwner(rsvpId);
-        }
-      }
-    }
-    
-    // Collection group queries for events
-    match /events/{eventId} {
-      // Anyone can read published events via collection group
-      allow read: if resource.data.status == 'published';
-    }
-    
-    // Collection group queries for RSVPs
-    match /rsvps/{rsvpId} {
-      // Users can only read their own RSVPs via collection group
-      allow read: if isOwner(rsvpId);
+
+    // This rule allows anyone with your Firestore database reference to view, edit,
+    // and delete all data in your Firestore database. It is useful for getting
+    // started, but it is configured to expire after 30 days because it
+    // leaves your app open to attackers. At that time, all client
+    // requests to your Firestore database will be denied.
+    //
+    // Make sure to write security rules for your app before that time, or else
+    // all client requests to your Firestore database will be denied until you Update
+    // your rules
+    match /{document=**} {
+      allow read, write: if request.time < timestamp.date(2026, 3, 28);
     }
   }
 }
