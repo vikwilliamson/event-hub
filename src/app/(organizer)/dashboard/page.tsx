@@ -1,6 +1,17 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/firebase/auth.server";
+import { getEventsPage } from "@/lib/actions/event.actions";
+import { BrowseEvents } from "@/components/event/browse-events";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const session = await getSession();
+  if (!session) {
+    redirect("/login");
+  }
+
+  const { events, nextCursor } = await getEventsPage({});
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-neutral-900">Dashboard</h1>
@@ -15,7 +26,9 @@ export default function DashboardPage() {
         </Link>
       </p>
 
-      <p className="mt-4 text-sm text-neutral-500">(Event list stub: wire to getOrganizerEvents)</p>
+      <section className="mt-8" aria-label="Event list">
+        <BrowseEvents initialEvents={events} initialNextCursor={nextCursor} />
+      </section>
     </div>
   );
 }
