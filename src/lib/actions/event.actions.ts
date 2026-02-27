@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/firebase/auth.server";
-import { getEventsRef, getOrganizerDisplayName, getOrganizerEventsPage, type EventsPageCursor } from "@/lib/firebase/db";
+import { getEventsRef, getOrganizerDisplayName } from "@/lib/firebase/db";
 import type { Event } from "@/lib/firebase/types";
 import { validateCreateEventPayload } from "@/lib/validations/event.schema";
 import { normalizeError } from "@/lib/utils/errors";
@@ -76,26 +76,4 @@ export async function createEvent(raw: unknown): Promise<CreateEventResult> {
       error: normalizeError(err).message,
     };
   }
-}
-
-export type EventsPageResult = {
-  events: Event[];
-  nextCursor: EventsPageCursor | null;
-};
-
-/**
- * Fetch a page of organizer events for list/load-more. Organizer-only.
- */
-export async function getEventsPage(opts: {
-  cursor?: EventsPageCursor | null;
-  limit?: number;
-}): Promise<EventsPageResult> {
-  const session = await getSession();
-  if (!session) {
-    redirect("/login");
-  }
-  return getOrganizerEventsPage(session.uid, {
-    cursor: opts.cursor ?? undefined,
-    limit: opts.limit,
-  });
 }

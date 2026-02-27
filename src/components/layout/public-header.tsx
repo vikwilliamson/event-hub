@@ -25,6 +25,22 @@ function AppNav() {
       <ul className="flex items-center gap-6">
         <li>
           <Link
+            href="/events"
+            className="text-neutral-700 hover:text-neutral-900 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 rounded"
+          >
+            Browse Events
+          </Link>
+        </li>
+        <li>
+          <Link
+            href="/my-rsvps"
+            className="text-neutral-700 hover:text-neutral-900 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 rounded"
+          >
+            My RSVPs
+          </Link>
+        </li>
+        <li>
+          <Link
             href="/login"
             className="text-neutral-700 hover:text-neutral-900 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 rounded"
           >
