@@ -1,26 +1,24 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { env } from "@/lib/env";
-
-const SESSION_COOKIE_NAME = env.SESSION_COOKIE_NAME ?? "session";
 
 /**
  * Protect /dashboard and below: require session cookie. Redirect to /login if missing.
  * Full cookie verification happens in getSession() on the server; here we only check presence.
  */
 export function middleware(request: NextRequest) {
-  const session = request.cookies.get(SESSION_COOKIE_NAME);
-  const isDashboard = request.nextUrl.pathname.startsWith("/dashboard");
-
-  if (isDashboard && !session?.value) {
-    const login = new URL("/login", request.url);
-    login.searchParams.set("from", request.nextUrl.pathname);
-    return NextResponse.redirect(login);
-  }
-
+  // No authentication required - allow access to all routes
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     */
+    "/((?!api|_next/static|_next/image|favicon.ico).*)",
+  ],
 };

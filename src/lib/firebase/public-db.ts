@@ -9,30 +9,21 @@ import type { Event } from "./types";
 
 /**
  * Fetch all published events from all organizers.
+ * Uses optimized collection group query instead of N+1 queries.
  * Returns events sorted by start date (upcoming first).
  */
 export async function getAllPublishedEvents(): Promise<Event[]> {
   const db = getAdminFirestore();
-  const organizersSnapshot = await db.collection("organizers").get();
   
-  const allEvents: Event[] = [];
+  // Use collection group query for efficient fetching across all organizers
+  const eventsSnapshot = await db
+    .collectionGroup("events")
+    .where("status", "==", "published")
+    .orderBy("startsAt", "asc")
+    .withConverter(eventConverter)
+    .get();
   
-  for (const organizerDoc of organizersSnapshot.docs) {
-    const organizerId = organizerDoc.id;
-    const eventsSnapshot = await db
-      .collection("organizers")
-      .doc(organizerId)
-      .collection("events")
-      .where("status", "==", "published")
-      .withConverter(eventConverter)
-      .get();
-    
-    const events = eventsSnapshot.docs.map(doc => doc.data());
-    allEvents.push(...events);
-  }
-  
-  // Sort by start date (upcoming events first)
-  return allEvents.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  return eventsSnapshot.docs.map(doc => doc.data());
 }
 
 /**
@@ -60,29 +51,31 @@ export async function getPublishedEvent(
 
 /**
  * Find an event by its ID across all organizers.
+ * Uses optimized collection group query instead of iterating through organizers.
  * Returns { event, organizerId } if found, null otherwise.
  */
 export async function findEventById(eventId: string): Promise<{ event: Event; organizerId: string } | null> {
   const db = getAdminFirestore();
-  const organizersSnapshot = await db.collection("organizers").get();
   
-  for (const organizerDoc of organizersSnapshot.docs) {
-    const organizerId = organizerDoc.id;
-    const eventSnap = await db
-      .collection("organizers")
-      .doc(organizerId)
-      .collection("events")
-      .doc(eventId)
-      .withConverter(eventConverter)
-      .get();
-    
-    if (eventSnap.exists) {
-      const event = eventSnap.data();
-      if (event && event.status === "published") {
-        return { event, organizerId };
-      }
-    }
+  // Use collection group query to find event across all organizers efficiently
+  const eventsQuery = await db
+    .collectionGroup("events")
+    .where("__name__", "==", eventId)
+    .where("status", "==", "published")
+    .limit(1)
+    .withConverter(eventConverter)
+    .get();
+
+  if (eventsQuery.docs.length === 0) {
+    return null;
   }
+
+  const eventDoc = eventsQuery.docs[0];
+  const event = eventDoc.data()!;
   
-  return null;
+  // Extract organizerId from the document path
+  const path = eventDoc.ref.path;
+  const organizerId = path.split('/')[1]; // /organizers/{organizerId}/events/{eventId}
+  
+  return { event, organizerId };
 }

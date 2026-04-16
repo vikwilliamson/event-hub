@@ -5,7 +5,7 @@ export default function HomePage() {
     <div className="py-12">
       <h1 className="text-3xl font-bold text-neutral-900">EventHub</h1>
       <p className="mt-2 text-neutral-600">
-        Create events and collect RSVPs. Get started by signing up or logging in.
+        Create events and collect RSVPs. No authentication required.
       </p>
       
       <div className="mt-8 flex gap-4">
@@ -16,10 +16,10 @@ export default function HomePage() {
           Browse Events
         </Link>
         <Link
-          href="/login"
+          href="/organizer/dashboard"
           className="inline-flex items-center rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-50 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2"
         >
-          Sign In
+          Dashboard
         </Link>
       </div>
     </div>

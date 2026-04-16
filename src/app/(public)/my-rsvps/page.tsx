@@ -1,165 +1,187 @@
-"use client";
-
-import { useMyRsvps } from "@/hooks/use-rsvp";
-import { RsvpButton } from "@/components/event/rsvp-button";
-import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { cancelRsvp } from "@/lib/actions/rsvp.actions";
+
+// Sample RSVP data for demo purposes (matches seeded database data)
+const sampleRsvps = [
+  {
+    id: "rsvp-1",
+    eventId: "react-summit-2024",
+    eventTitle: "React Summit 2024",
+    organizerName: "Tech Events Co",
+    attendeeName: "Alice Johnson",
+    attendeeEmail: "alice@example.com",
+    status: "confirmed",
+    createdAt: new Date("2024-05-15T10:00:00"),
+    cancelledAt: null,
+  },
+  {
+    id: "rsvp-2", 
+    eventId: "react-summit-2024",
+    eventTitle: "React Summit 2024",
+    organizerName: "Tech Events Co",
+    attendeeName: "Bob Smith",
+    attendeeEmail: "bob@example.com",
+    status: "confirmed",
+    createdAt: new Date("2024-05-16T14:30:00"),
+    cancelledAt: null,
+  },
+  {
+    id: "rsvp-3",
+    eventId: "javascript-workshop",
+    eventTitle: "JavaScript Workshop", 
+    organizerName: "Tech Events Co",
+    attendeeName: "Carol Davis",
+    attendeeEmail: "carol@example.com",
+    status: "confirmed",
+    createdAt: new Date("2024-06-01T09:15:00"),
+    cancelledAt: null,
+  },
+  {
+    id: "rsvp-4",
+    eventId: "python-for-beginners",
+    eventTitle: "Python for Beginners",
+    organizerName: "Community Learning",
+    attendeeName: "David Wilson", 
+    attendeeEmail: "david@example.com",
+    status: "confirmed",
+    createdAt: new Date("2024-06-10T11:20:00"),
+    cancelledAt: null,
+  },
+  {
+    id: "rsvp-5",
+    eventId: "web-dev-meetup",
+    eventTitle: "Web Development Meetup",
+    organizerName: "Tech Events Co",
+    attendeeName: "Eva Brown",
+    attendeeEmail: "eva@example.com",
+    status: "cancelled",
+    createdAt: new Date("2024-07-01T16:45:00"),
+    cancelledAt: new Date("2024-11-15T10:30:00"),
+  },
+  {
+    id: "rsvp-6",
+    eventId: "design-systems-workshop",
+    eventTitle: "Design Systems Workshop",
+    organizerName: "Community Learning",
+    attendeeName: "Frank Miller",
+    attendeeEmail: "frank@example.com", 
+    status: "confirmed",
+    createdAt: new Date("2024-01-20T13:00:00"),
+    cancelledAt: null,
+  },
+];
 
 export default function MyRsvpsPage() {
-  const { rsvps, isLoading, error, refetch } = useMyRsvps();
-
-  const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      timeZoneName: "short",
-    }).format(date);
-  };
-
-  const handleCancelRsvp = async (eventId: string, organizerId: string) => {
-    try {
-      const result = await cancelRsvp(eventId, organizerId);
-      if (result.ok) {
-        refetch(); // Refresh the list
-      } else {
-        alert(result.error);
-      }
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to cancel RSVP");
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="max-w-4xl mx-auto py-8 px-4">
-        <div className="animate-pulse">
-          <div className="h-8 bg-neutral-200 rounded w-1/3 mb-4"></div>
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="border border-neutral-200 rounded-lg p-6">
-                <div className="h-6 bg-neutral-200 rounded w-2/3 mb-2"></div>
-                <div className="h-4 bg-neutral-200 rounded w-1/2"></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="max-w-4xl mx-auto py-8 px-4">
-        <div className="text-center py-12">
-          <svg className="w-16 h-16 mx-auto text-red-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <h3 className="text-lg font-medium text-neutral-900 mb-2">Error loading RSVPs</h3>
-          <p className="text-neutral-600 mb-4">{error}</p>
-          <Button onClick={refetch}>Try again</Button>
-        </div>
-      </div>
-    );
-  }
+  const confirmedRsvps = sampleRsvps.filter(rsvp => rsvp.status === "confirmed");
+  const cancelledRsvps = sampleRsvps.filter(rsvp => rsvp.status === "cancelled");
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-neutral-900 mb-2">My RSVPs</h1>
         <p className="text-lg text-neutral-600">
-          Manage your event RSVPs and see upcoming events you're attending.
+          Track your event registrations and attendance.
         </p>
       </div>
 
-      <div className="mb-6">
-        <Link
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="bg-white rounded-lg border border-neutral-200 p-6 shadow-sm">
+          <h3 className="text-lg font-semibold text-neutral-900 mb-2">Total RSVPs</h3>
+          <p className="text-3xl font-bold text-blue-600">{sampleRsvps.length}</p>
+        </div>
+        <div className="bg-white rounded-lg border border-neutral-200 p-6 shadow-sm">
+          <h3 className="text-lg font-semibold text-neutral-900 mb-2">Confirmed</h3>
+          <p className="text-3xl font-bold text-green-600">{confirmedRsvps.length}</p>
+        </div>
+        <div className="bg-white rounded-lg border border-neutral-200 p-6 shadow-sm">
+          <h3 className="text-lg font-semibold text-neutral-900 mb-2">Cancelled</h3>
+          <p className="text-3xl font-bold text-red-600">{cancelledRsvps.length}</p>
+        </div>
+      </div>
+
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-bold text-neutral-900">Your RSVPs</h2>
+        <Link 
           href="/events"
-          className="inline-flex items-center px-4 py-2 bg-neutral-100 text-neutral-900 rounded-md hover:bg-neutral-200 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2"
+          className="rounded bg-neutral-900 px-4 py-2 text-white hover:bg-neutral-800 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2"
         >
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          Browse Events
+          Browse More Events
         </Link>
       </div>
 
-      {rsvps.length === 0 ? (
+      {sampleRsvps.length === 0 ? (
         <div className="text-center py-12">
-          <svg className="w-16 h-16 mx-auto text-neutral-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-          </svg>
-          <h3 className="text-lg font-medium text-neutral-900 mb-2">No RSVPs yet</h3>
-          <p className="text-neutral-600 mb-4">
-            You haven't RSVP'd to any events yet. Start exploring events to attend!
+          <h3 className="text-lg font-semibold text-neutral-900 mb-2">No RSVPs yet</h3>
+          <p className="text-neutral-600 mb-6">
+            You haven't registered for any events yet.
           </p>
-          <Link href="/events">
-            <Button>Browse Events</Button>
+          <Link 
+            href="/events"
+            className="rounded bg-neutral-900 px-6 py-3 text-white hover:bg-neutral-800 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2"
+          >
+            Browse Events
           </Link>
         </div>
       ) : (
         <div className="space-y-6">
-          {rsvps.map((rsvp) => (
-            <div key={rsvp.id} className="border border-neutral-200 rounded-lg p-6">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-neutral-900 mb-1">
-                    <Link 
-                      href={`/events/${rsvp.eventId}`}
-                      className="hover:text-neutral-600 focus:outline-none focus:underline"
-                    >
-                      {rsvp.eventSnapshot?.title || "Event"}
-                    </Link>
-                  </h3>
-                  {rsvp.eventSnapshot && (
-                    <div className="space-y-1 text-sm text-neutral-600">
-                      <div className="flex items-center">
-                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                        {formatDate(rsvp.eventSnapshot.startsAt)}
+          {/* Confirmed RSVPs */}
+          {confirmedRsvps.length > 0 && (
+            <div>
+              <h3 className="text-lg font-semibold text-neutral-900 mb-4">Confirmed RSVPs</h3>
+              <div className="space-y-4">
+                {confirmedRsvps.map((rsvp) => (
+                  <div key={rsvp.id} className="bg-white rounded-lg border border-neutral-200 p-6 shadow-sm">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h4 className="font-semibold text-neutral-900">{rsvp.eventTitle}</h4>
+                        <p className="text-sm text-neutral-600">{rsvp.organizerName}</p>
                       </div>
-                      
-                      <div className="flex items-center">
-                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        {rsvp.eventSnapshot.location}
-                      </div>
+                      <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
+                        rsvp.status === 'confirmed' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {rsvp.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
+                      </span>
                     </div>
-                  )}
-                </div>
-                <div className="ml-4">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    Going
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center">
-                <Link
-                  href={`/events/${rsvp.eventId}`}
-                  className="text-sm font-medium text-neutral-900 hover:text-neutral-600 focus:outline-none focus:underline"
-                >
-                  View details →
-                </Link>
-                
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleCancelRsvp(rsvp.eventId, rsvp.organizerId)}
-                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                >
-                  Cancel RSVP
-                </Button>
+                    <div className="text-sm text-neutral-600">
+                      <p><strong>Name:</strong> {rsvp.attendeeName}</p>
+                      <p><strong>Email:</strong> {rsvp.attendeeEmail}</p>
+                      <p><strong>RSVP Date:</strong> {rsvp.createdAt.toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
+          )}
+
+          {/* Cancelled RSVPs */}
+          {cancelledRsvps.length > 0 && (
+            <div>
+              <h3 className="text-lg font-semibold text-neutral-900 mb-4">Cancelled RSVPs</h3>
+              <div className="space-y-4">
+                {cancelledRsvps.map((rsvp) => (
+                  <div key={rsvp.id} className="bg-white rounded-lg border border-neutral-200 p-6 shadow-sm opacity-75">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h4 className="font-semibold text-neutral-900">{rsvp.eventTitle}</h4>
+                        <p className="text-sm text-neutral-600">{rsvp.organizerName}</p>
+                      </div>
+                      <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium bg-red-100 text-red-800">
+                        Cancelled
+                      </span>
+                    </div>
+                    <div className="text-sm text-neutral-600">
+                      <p><strong>Name:</strong> {rsvp.attendeeName}</p>
+                      <p><strong>Email:</strong> {rsvp.attendeeEmail}</p>
+                      <p><strong>RSVP Date:</strong> {rsvp.createdAt.toLocaleDateString()}</p>
+                      <p><strong>Cancelled:</strong> {rsvp.cancelledAt.toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
