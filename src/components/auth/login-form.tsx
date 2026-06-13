@@ -81,7 +81,7 @@ export function LoginForm() {
         const sessionResponse = await createSession(idToken);
 
         if (sessionResponse.ok) {
-          router.push("/organizer/dashboard");
+          router.push("/dashboard");
         } else {
           setSubmitError(sessionResponse.error);
           const firstError = getFirstErrorElement();

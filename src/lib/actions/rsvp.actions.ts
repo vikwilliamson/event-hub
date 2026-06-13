@@ -64,7 +64,7 @@ export async function rsvpEvent(eventId: string, organizerId: string): Promise<R
       // Create RSVP and update event count atomically
       transaction.set(getRsvpRef(organizerId, eventId, userId), rsvp);
       transaction.update(getEventRef(organizerId, eventId), {
-        rsvpCount: event.rsvpCount + 1,
+        rsvpCount: FieldValue.increment(1),
         updatedAt: FieldValue.serverTimestamp(),
       });
     });
@@ -102,21 +102,17 @@ export async function cancelRsvp(eventId: string, organizerId: string): Promise<
     
     // Use transaction to ensure atomicity
     await db.runTransaction(async (transaction) => {
-      // Get event for rsvpCount update
       const eventSnap = await transaction.get(getEventRef(organizerId, eventId));
       if (!eventSnap.exists) {
         throw new Error("Event not found");
       }
-      const event = eventSnap.data()!;
 
-      // Update RSVP with cancellation
       transaction.update(getRsvpRef(organizerId, eventId, userId), {
         cancelledAt: FieldValue.serverTimestamp(),
       });
-      
-      // Update event RSVP count (ensure it doesn't go below 0)
+
       transaction.update(getEventRef(organizerId, eventId), {
-        rsvpCount: Math.max(0, event.rsvpCount - 1),
+        rsvpCount: FieldValue.increment(-1),
         updatedAt: FieldValue.serverTimestamp(),
       });
     });

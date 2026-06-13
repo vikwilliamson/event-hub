@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-/**
- * Protect /dashboard and below: require session cookie. Redirect to /login if missing.
- * Full cookie verification happens in getSession() on the server; here we only check presence.
- */
+const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "session";
+
 export function middleware(request: NextRequest) {
-  // No authentication required - allow access to all routes
+  const { pathname } = request.nextUrl;
+
+  if (pathname.startsWith("/dashboard")) {
+    const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME);
+    if (!sessionCookie) {
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("next", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
   return NextResponse.next();
 }
 
