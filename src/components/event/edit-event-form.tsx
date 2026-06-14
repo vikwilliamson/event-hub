@@ -3,39 +3,56 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createEventFormSchema } from "@/lib/validations/event.schema";
-import { createEvent } from "@/lib/actions/event.actions";
+import { updateEvent } from "@/lib/actions/event.actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FieldError } from "@/components/ui/field-error";
 
-const TITLE_ID = "event-title";
-const DESCRIPTION_ID = "event-description";
-const LOCATION_ID = "event-location";
-const DATE_ID = "event-date";
-const TIME_ID = "event-time";
-const CAPACITY_ID = "event-capacity";
-const FORM_ERROR_ID = "event-form-error";
+const TITLE_ID = "edit-event-title";
+const DESCRIPTION_ID = "edit-event-description";
+const LOCATION_ID = "edit-event-location";
+const DATE_ID = "edit-event-date";
+const TIME_ID = "edit-event-time";
+const CAPACITY_ID = "edit-event-capacity";
+const FORM_ERROR_ID = "edit-event-form-error";
 
 type FieldErrors = Record<string, string[]>;
 
-/**
- * Create-event form: title, description, location, date, time.
- * Client-side validation with Zod; server-side guard in createEvent.
- * Save as draft (optional) or Publish. Accessible: labels, aria-describedby, focus on first error.
- */
-export function EventForm() {
+interface EditEventFormProps {
+  eventId: string;
+  initialTitle: string;
+  initialDescription: string;
+  initialLocation: string;
+  initialDate: string;
+  initialTime: string;
+  initialStatus: "draft" | "published";
+  initialCapacity: number | undefined;
+}
+
+export function EditEventForm({
+  eventId,
+  initialTitle,
+  initialDescription,
+  initialLocation,
+  initialDate,
+  initialTime,
+  initialStatus,
+  initialCapacity,
+}: EditEventFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [location, setLocation] = useState("");
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
-  const [capacity, setCapacity] = useState("");
+  const [title, setTitle] = useState(initialTitle);
+  const [description, setDescription] = useState(initialDescription);
+  const [location, setLocation] = useState(initialLocation);
+  const [date, setDate] = useState(initialDate);
+  const [time, setTime] = useState(initialTime);
+  const [capacity, setCapacity] = useState(
+    initialCapacity !== undefined ? String(initialCapacity) : ""
+  );
 
   function getFirstErrorElement(): HTMLElement | null {
     const order = [TITLE_ID, DESCRIPTION_ID, LOCATION_ID, DATE_ID, TIME_ID, CAPACITY_ID];
@@ -60,7 +77,7 @@ export function EventForm() {
         if (Array.isArray(messages) && messages.length) errors[key] = messages;
       }
       setFieldErrors(errors);
-      setSubmitError(parsed.error.flatten().formErrors.join(" ") || "Please fix the errors below.");
+      setSubmitError(flat.formErrors.join(" ") || "Please fix the errors below.");
       startTransition(() => {
         getFirstErrorElement()?.focus();
       });
@@ -88,7 +105,7 @@ export function EventForm() {
     };
 
     startTransition(() => {
-      createEvent(payload).then((result) => {
+      updateEvent(eventId, payload).then((result) => {
         if (result.ok) {
           router.push(`/dashboard/events/${result.data.eventId}`);
           return;
@@ -114,7 +131,11 @@ export function EventForm() {
       aria-describedby={hasErrors ? FORM_ERROR_ID : undefined}
     >
       {submitError && (
-        <div id={FORM_ERROR_ID} role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <div
+          id={FORM_ERROR_ID}
+          role="alert"
+          className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
           <span className="font-medium">Error:</span> {submitError}
         </div>
       )}
@@ -131,12 +152,13 @@ export function EventForm() {
           placeholder="Event title"
           className="mt-1"
           error={err("title")}
-          errorId="event-title-error"
+          errorId="edit-event-title-error"
           autoComplete="off"
           maxLength={100}
           required
+          disabled={isPending}
         />
-        {err("title") && <FieldError id="event-title-error">{err("title")}</FieldError>}
+        {err("title") && <FieldError id="edit-event-title-error">{err("title")}</FieldError>}
       </div>
 
       <div>
@@ -150,11 +172,14 @@ export function EventForm() {
           placeholder="What's the event about?"
           className="mt-1"
           error={err("description")}
-          errorId="event-description-error"
+          errorId="edit-event-description-error"
           rows={4}
           required
+          disabled={isPending}
         />
-        {err("description") && <FieldError id="event-description-error">{err("description")}</FieldError>}
+        {err("description") && (
+          <FieldError id="edit-event-description-error">{err("description")}</FieldError>
+        )}
       </div>
 
       <div>
@@ -166,14 +191,17 @@ export function EventForm() {
           type="text"
           value={location}
           onChange={(e) => setLocation(e.target.value)}
-          placeholder="Address, venue, or “Online”"
+          placeholder='Address, venue, or "Online"'
           className="mt-1"
           error={err("location")}
-          errorId="event-location-error"
+          errorId="edit-event-location-error"
           autoComplete="off"
           required
+          disabled={isPending}
         />
-        {err("location") && <FieldError id="event-location-error">{err("location")}</FieldError>}
+        {err("location") && (
+          <FieldError id="edit-event-location-error">{err("location")}</FieldError>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -188,10 +216,11 @@ export function EventForm() {
             onChange={(e) => setDate(e.target.value)}
             className="mt-1"
             error={err("date")}
-            errorId="event-date-error"
+            errorId="edit-event-date-error"
             required
+            disabled={isPending}
           />
-          {err("date") && <FieldError id="event-date-error">{err("date")}</FieldError>}
+          {err("date") && <FieldError id="edit-event-date-error">{err("date")}</FieldError>}
         </div>
         <div>
           <label htmlFor={TIME_ID} className="block text-sm font-medium text-neutral-700">
@@ -204,16 +233,18 @@ export function EventForm() {
             onChange={(e) => setTime(e.target.value)}
             className="mt-1"
             error={err("time")}
-            errorId="event-time-error"
+            errorId="edit-event-time-error"
             required
+            disabled={isPending}
           />
-          {err("time") && <FieldError id="event-time-error">{err("time")}</FieldError>}
+          {err("time") && <FieldError id="edit-event-time-error">{err("time")}</FieldError>}
         </div>
       </div>
 
       <div>
         <label htmlFor={CAPACITY_ID} className="block text-sm font-medium text-neutral-700">
-          Capacity <span className="font-normal text-neutral-500">(optional)</span>
+          Capacity{" "}
+          <span className="font-normal text-neutral-500">(optional)</span>
         </label>
         <Input
           id={CAPACITY_ID}
@@ -224,19 +255,17 @@ export function EventForm() {
           placeholder="Leave blank for unlimited"
           className="mt-1"
           error={err("capacity")}
-          errorId="event-capacity-error"
+          errorId="edit-event-capacity-error"
           disabled={isPending}
         />
-        {err("capacity") && <FieldError id="event-capacity-error">{err("capacity")}</FieldError>}
+        {err("capacity") && (
+          <FieldError id="edit-event-capacity-error">{err("capacity")}</FieldError>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <Button
-          type="submit"
-          isLoading={isPending}
-          loadingLabel="Creating event"
-        >
-          Publish event
+        <Button type="submit" isLoading={isPending} loadingLabel="Saving event">
+          Save &amp; publish
         </Button>
         <Button
           type="button"
@@ -246,6 +275,14 @@ export function EventForm() {
           aria-label="Save as draft without publishing"
         >
           Save as draft
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={isPending}
+          onClick={() => router.push(`/dashboard/events/${eventId}`)}
+        >
+          Cancel
         </Button>
       </div>
     </form>

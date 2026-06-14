@@ -2,8 +2,9 @@
 
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/firebase/auth.server";
+import { getAdminAuth } from "@/lib/firebase/admin";
 import { getRsvpRef, getUserRsvp, getUserRsvps, getEventRsvps } from "@/lib/firebase/rsvp-db";
-import { getEventRef } from "@/lib/firebase/db";
+import { getEvent, getEventRef } from "@/lib/firebase/db";
 import type { Rsvp } from "@/lib/firebase/types";
 import { normalizeError } from "@/lib/utils/errors";
 import { FieldValue } from "firebase-admin/firestore";
@@ -14,6 +15,17 @@ export type RsvpResult =
 
 export type GetMyRsvpsResult =
   | { ok: true; data: { rsvps: Rsvp[] } }
+  | { ok: false; error: string };
+
+export type AttendeeInfo = {
+  userId: string;
+  email: string | null;
+  displayName: string | null;
+  rsvpDate: Date;
+};
+
+export type GetEventAttendeesResult =
+  | { ok: true; data: { attendees: AttendeeInfo[]; eventTitle: string } }
   | { ok: false; error: string };
 
 /**
@@ -145,6 +157,49 @@ export async function getMyRsvps(): Promise<GetMyRsvpsResult> {
       ok: false,
       error: normalizeError(err).message,
     };
+  }
+}
+
+/**
+ * Get confirmed attendees for an event. Organizer-only.
+ * Merges RSVP records with Firebase Auth user info (email, displayName).
+ */
+export async function getEventAttendees(
+  eventId: string
+): Promise<GetEventAttendeesResult> {
+  const session = await getSession();
+  if (!session) {
+    redirect("/login");
+  }
+
+  try {
+    const event = await getEvent(session.uid, eventId);
+    if (!event) return { ok: false, error: "Event not found." };
+
+    const rsvps = await getEventRsvps(session.uid, eventId);
+    if (rsvps.length === 0) {
+      return {
+        ok: true,
+        data: { attendees: [], eventTitle: event.title },
+      };
+    }
+
+    const identifiers = rsvps.map((r) => ({ uid: r.userId }));
+    const authResult = await getAdminAuth().getUsers(identifiers);
+    const userMap = new Map(authResult.users.map((u) => [u.uid, u]));
+
+    const attendees: AttendeeInfo[] = rsvps
+      .map((r) => ({
+        userId: r.userId,
+        email: userMap.get(r.userId)?.email ?? null,
+        displayName: userMap.get(r.userId)?.displayName ?? null,
+        rsvpDate: r.createdAt,
+      }))
+      .sort((a, b) => a.rsvpDate.getTime() - b.rsvpDate.getTime());
+
+    return { ok: true, data: { attendees, eventTitle: event.title } };
+  } catch (err) {
+    return { ok: false, error: normalizeError(err).message };
   }
 }
 
