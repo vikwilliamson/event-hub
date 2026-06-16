@@ -5,9 +5,11 @@ import { getSession } from "@/lib/firebase/auth.server";
 import { getAdminAuth } from "@/lib/firebase/admin";
 import { getRsvpRef, getUserRsvp, getUserRsvps, getEventRsvps } from "@/lib/firebase/rsvp-db";
 import { getEvent, getEventRef } from "@/lib/firebase/db";
-import type { Rsvp } from "@/lib/firebase/types";
+import type { Event, Rsvp } from "@/lib/firebase/types";
 import { normalizeError } from "@/lib/utils/errors";
 import { FieldValue } from "firebase-admin/firestore";
+import { env } from "@/lib/env";
+import { sendRsvpConfirmationEmail } from "@/lib/email";
 
 export type RsvpResult =
   | { ok: true; data: { rsvp: Rsvp } }
@@ -40,25 +42,24 @@ export async function rsvpEvent(eventId: string, organizerId: string): Promise<R
 
   const userId = session.uid;
 
+  let capturedEvent: Event | null = null;
+
   try {
     const db = getRsvpRef(organizerId, eventId, userId).firestore;
-    
-    // Use transaction to ensure atomicity and prevent race conditions
+
     await db.runTransaction(async (transaction) => {
-      // Check if already RSVP'd inside transaction
       const existingRsvpSnap = await transaction.get(getRsvpRef(organizerId, eventId, userId));
       if (existingRsvpSnap.exists && !existingRsvpSnap.data()!.cancelledAt) {
         throw new Error("You have already RSVP'd to this event");
       }
 
-      // Get event details for snapshot and validation
       const eventSnap = await transaction.get(getEventRef(organizerId, eventId));
       if (!eventSnap.exists) {
         throw new Error("Event not found");
       }
       const event = eventSnap.data()!;
+      capturedEvent = event;
 
-      // Create RSVP with user ID as doc ID
       const rsvp: Rsvp = {
         id: userId,
         eventId,
@@ -73,7 +74,6 @@ export async function rsvpEvent(eventId: string, organizerId: string): Promise<R
         cancelledAt: null,
       };
 
-      // Create RSVP and update event count atomically
       transaction.set(getRsvpRef(organizerId, eventId, userId), rsvp);
       transaction.update(getEventRef(organizerId, eventId), {
         rsvpCount: FieldValue.increment(1),
@@ -81,8 +81,32 @@ export async function rsvpEvent(eventId: string, organizerId: string): Promise<R
       });
     });
 
-    // Return the created RSVP
     const createdRsvp = await getUserRsvp(organizerId, eventId, userId);
+
+    // Fire-and-forget confirmation email — never blocks the RSVP response
+    if (capturedEvent && session.email) {
+      const event = capturedEvent;
+      const to = session.email;
+      void (async () => {
+        try {
+          const authUser = await getAdminAuth().getUser(userId);
+          const displayName =
+            authUser.displayName ?? authUser.email?.split("@")[0] ?? "there";
+          await sendRsvpConfirmationEmail({
+            to,
+            displayName,
+            event,
+            appUrl: env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+          });
+        } catch (err) {
+          console.warn(
+            "[email] rsvp confirmation failed:",
+            err instanceof Error ? err.message : String(err)
+          );
+        }
+      })();
+    }
+
     return { ok: true, data: { rsvp: createdRsvp! } };
   } catch (err) {
     return {
