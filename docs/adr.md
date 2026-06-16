@@ -290,6 +290,75 @@ Use `react-hook-form` with `zodResolver` for all forms. Validation schemas live 
 
 ---
 
+## ADR-006 — Auth-based RSVP model: attendees must have a Firebase Auth account to RSVP
+
+**Date:** 2026-06  
+**Status:** Accepted  
+**Supersedes:** The email-only RSVP model described in PRD v1.1 (§2, §4 US-A2/A3, §7) and data-model.md v1.0 (§3.4)
+
+### Context
+
+The original PRD specified a stateless, email-only RSVP model: attendees submit a name and email, receive a signed cancel link in their confirmation email, and cancel via that link — no account required. This was a deliberate product hypothesis: "will conversion be higher if we remove the signup step?"
+
+The initial implementation diverged from this spec. The `rsvpEvent` and `cancelRsvp` server actions were built using Firebase Auth session cookies — attendees are identified by `session.uid`, not by email. The `Rsvp` type in the codebase has `userId`, not `attendeeName`/`attendeeEmail`/`cancelToken`.
+
+Two options were evaluated:
+
+**Option A — Accept and formalize the auth-based model.**
+
+- Attendees must have a Firebase Auth account to RSVP
+- RSVP doc ID = `userId` (structural idempotency, no hash function)
+- Cancel: attendee navigates to `/my-rsvps` and clicks cancel (session-based, no token)
+- Confirmation email sent to the attendee's registered email; no cancel link in the email
+- Cancel token infrastructure (HMAC, expiry, `/events/[id]/cancel` route) is not needed
+- Enables a My RSVPs dashboard without additional infrastructure
+
+**Option B — Revert to the email-only model per the original PRD.**
+
+- Rip out the existing auth-based RSVP implementation
+- Build: HMAC cancel token generation + verification, `/events/[id]/cancel` page, `cancelToken`/`cancelTokenExpiresAt` on RSVP doc, Firestore index on `cancelToken`, `attendeeName`/`attendeeEmail` form fields, email idempotency via sha256(email) as doc ID
+- Attendees still cannot access a My RSVPs dashboard without adding accounts later
+
+**Trade-offs:**
+
+| Concern | Option A (auth-based) | Option B (email-only) |
+|---|---|---|
+| Conversion friction | Higher (sign-up required) | Lower (name + email only) |
+| Cancel UX | Dashboard-based; persistent | Email link; one-time, expiring |
+| PII stored in Firestore | None (names/emails stay in Auth) | `attendeeEmail` in RSVP doc |
+| Cancel token infra | Not needed | HMAC + index + cancel page |
+| My RSVPs dashboard | Supported natively | Requires v2 account feature |
+| Implementation status | Already built and tested | Requires full rebuild of RSVP layer |
+| Long-term account model | Unified (organizers + attendees both have accounts) | Split (organizers have accounts, attendees don't) |
+
+**Additional context:** The conversion hypothesis ("no account = better conversion") is valid but untested. The auth-based model allows us to test a counter-hypothesis: "a good RSVP dashboard experience drives account creation." Auth accounts also eliminate cancel token expiry complexity, reduce PII surface area in Firestore, and unify the auth model so future attendee features (notifications, waitlists, RSVP history) don't require a schema migration.
+
+### Decision
+
+Accept Option A. The auth-based RSVP model is formalized as the v1 design. Attendees must have a Firebase Auth account to RSVP. The RSVP document ID is `userId`. Cancellation is session-based via `/my-rsvps`. Cancel token infrastructure is not built in v1.
+
+The conversion trade-off is accepted as a deliberate product bet, not an oversight. If conversion data shows that the sign-up step is a material drop-off point, the correct response is to optimize the sign-up flow (OAuth, magic link), not to build a parallel unauthenticated RSVP path.
+
+### Consequences
+
+**Positive:**
+
+- No HMAC token infrastructure — eliminates `lib/tokens/`, the `/events/[id]/cancel` route, and the `cancelToken` Firestore index
+- Attendee PII (name, email) stays in Firebase Auth — not duplicated into RSVP documents
+- My RSVPs dashboard is a first-class feature with no extra schema work
+- Unified auth model: all users (organizers and attendees) are Firebase Auth accounts
+- RSVP idempotency is structural (doc ID = userId) rather than hash-based
+
+**Negative:**
+
+- Attendees must create an account before RSVPing — higher friction than name + email
+- RSVP conversion rate may be lower; this is a known trade-off and will be measured (see PRD §6)
+- Existing tests or integration specs that assumed the email-only model need updating
+
+**Watch:** If Lighthouse or real-user conversion data shows significant drop-off at the sign-in gate, evaluate adding Google OAuth (ADR scope: REQ-AUTH-1 currently email/password only) before revisiting the no-account model. OAuth reduces the auth step to ~2 clicks and may close the conversion gap.
+
+---
+
 ## ADR-005 — Use Vitest for unit tests, Playwright for E2E, and the Firebase Emulator Suite for integration tests; no React Testing Library component rendering tests
 
 **Date:** 2025-01  

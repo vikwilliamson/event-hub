@@ -1,5 +1,5 @@
 # EventHub — Accessibility Interaction Specification
-**Version:** 1.0 · **Depends on:** PRD v1.1, IA & Screens v1.0 · **Status:** Draft
+**Version:** 1.1 · **Depends on:** PRD v1.2, ADR-006 · **Status:** Draft
 **Standard:** WCAG 2.1 AA · **Test targets:** VoiceOver/Safari (macOS), NVDA/Firefox (Windows), Keyboard-only (Chrome)
 
 > **How to read this doc:** Each section maps to a screen or shared pattern. For each interactive surface, you get: tab order, keyboard contract, ARIA roles/attributes, validation behaviour, and focus lifecycle. Implementation notes call out code-level specifics. Test assertions are written as checkable statements.
@@ -35,7 +35,7 @@ Every route sets a unique `<title>` in the format `[Page Name] — EventHub`.
 | Route | Title |
 |-------|-------|
 | `/events/[id]` | `[Event Title] — EventHub` |
-| `/events/[id]/cancel` | `Cancel RSVP: [Event Title] — EventHub` |
+| `/my-rsvps` | `My RSVPs — EventHub` |
 | `/login` | `Sign In — EventHub` |
 | `/register` | `Create Account — EventHub` |
 | `/reset-password` | `Reset Password — EventHub` |
@@ -60,7 +60,7 @@ export async function generateMetadata({ params }: Props) {
 | Screen | `<h1>` | `<h2>` examples |
 |--------|--------|-----------------|
 | Event Detail | Event title | "About this event", "RSVP" |
-| Cancel RSVP | "Cancel your RSVP" | — |
+| My RSVPs | "My RSVPs" | — |
 | Register | "Create your account" | — |
 | Login | "Sign in" | — |
 | Reset Password | "Reset your password" | — |
@@ -114,32 +114,46 @@ A single `aria-live` region exists in every layout root, outside the page conten
 
 ---
 
-## 1. RSVP Form (`/events/[id]`)
+## 1. RSVP Section (`/events/[id]`)
+
+The RSVP section uses an **auth-based model** (see ADR-006). No name or email form fields are collected. The attendee's identity comes from their Firebase Auth session.
 
 ### 1.1 Tab Order
 
+**Authenticated user (can RSVP):**
 ```
 [Skip to main content]          ← 1 (visually hidden until focused)
 [Event detail — not focusable]  ← landmark navigation only
 [RSVP section heading]          ← not focusable (h2)
-[Name input]                    ← 2
-[Email input]                   ← 3
-[Submit button]                 ← 4
+[Reserve my spot button]        ← 2
 ```
 
-No other interactive elements on this page in the default state. When the event is full/cancelled, the form is absent and there are no Tab stops beyond the skip link.
+**Unauthenticated user (must sign in first):**
+```
+[Skip to main content]          ← 1
+[RSVP section heading]          ← not focusable (h2)
+[Sign in to RSVP link/button]   ← 2
+```
+
+**Event full or cancelled:** RSVP section shows status message only; no Tab stops beyond the skip link.
+
+**Authenticated user who has already RSVPed:**
+```
+[Skip to main content]          ← 1
+[RSVP section heading]          ← not focusable (h2)
+["You're registered" status]    ← not focusable (role="status")
+[Manage my RSVPs link]          ← 2 (links to /my-rsvps)
+```
 
 ### 1.2 Keyboard Contract
 
 | Key | Element | Behaviour |
 |-----|---------|-----------|
-| `Tab` | Any input | Moves to next field / submit button |
-| `Shift+Tab` | Any input | Moves to previous field / page |
-| `Enter` | Submit button | Submits form |
-| `Enter` | Name or email input | Submits form (default `<form>` behaviour — do not suppress) |
-| `Space` | Submit button | Submits form (button default) |
+| `Enter` / `Space` | Reserve my spot button | Submits RSVP server action |
+| `Enter` | Sign in to RSVP link | Navigates to `/login?next=/events/[id]` |
+| `Tab` / `Shift+Tab` | Any element | Standard focus traversal |
 
-No custom keyboard shortcuts on this screen — it is a public-facing form and must work with zero learning curve.
+No custom keyboard shortcuts. The RSVP action requires no form field input from the user.
 
 ### 1.3 ARIA Structure
 
@@ -159,143 +173,136 @@ No custom keyboard shortcuts on this screen — it is a public-facing form and m
 
     <section aria-labelledby="rsvp-heading">
       <h2 id="rsvp-heading">RSVP to this event</h2>
-      <form
-        aria-label="RSVP form"
-        novalidate
-        onsubmit="handleSubmit"
-      >
-        <div>
-          <label for="rsvp-name">Your name</label>
-          <input
-            id="rsvp-name"
-            name="name"
-            type="text"
-            autocomplete="name"
-            required
-            aria-required="true"
-            aria-describedby="rsvp-name-error"
-            aria-invalid="{{ nameError ? 'true' : 'false' }}"
-          />
-          <span id="rsvp-name-error" role="alert" aria-live="assertive">
-            {{ nameError }}  <!-- empty string when no error -->
-          </span>
-        </div>
 
-        <div>
-          <label for="rsvp-email">Your email address</label>
-          <input
-            id="rsvp-email"
-            name="email"
-            type="email"
-            autocomplete="email"
-            required
-            aria-required="true"
-            aria-describedby="rsvp-email-error rsvp-email-hint"
-            aria-invalid="{{ emailError ? 'true' : 'false' }}"
-          />
-          <span id="rsvp-email-hint">
-            We'll send your confirmation and cancel link here.
-          </span>
-          <span id="rsvp-email-error" role="alert" aria-live="assertive">
-            {{ emailError }}
-          </span>
-        </div>
-
-        <button type="submit" aria-disabled="{{ isSubmitting }}">
+      <!-- STATE A: Authenticated, not yet RSVPed -->
+      <form action="{{ rsvpServerAction }}">
+        <p class="sr-only">
+          RSVPing as {{ session.displayName ?? session.email }}
+        </p>
+        <button
+          type="submit"
+          aria-disabled="{{ isSubmitting }}"
+          aria-describedby="rsvp-form-error"
+        >
           {{ isSubmitting ? 'Reserving your spot…' : 'Reserve my spot' }}
         </button>
+        <div id="rsvp-form-error" role="alert" aria-live="assertive">
+          {{ formError }}  <!-- empty string when no error -->
+        </div>
       </form>
+
+      <!-- STATE B: Unauthenticated -->
+      <div>
+        <p>You need an account to RSVP.</p>
+        <a href="/login?next={{ encodeURIComponent(currentPath) }}">
+          Sign in to RSVP
+        </a>
+        <span> · </span>
+        <a href="/register">Create a free account</a>
+      </div>
+
+      <!-- STATE C: Already RSVPed -->
+      <div role="status" id="rsvp-already-registered">
+        <p>You're already registered for this event.</p>
+        <a href="/my-rsvps">Manage my RSVPs</a>
+      </div>
+
+      <!-- STATE D: Event full -->
+      <p role="status">This event is at capacity. No spots remaining.</p>
+
+      <!-- STATE E: Event cancelled -->
+      <p role="status">This event has been cancelled.</p>
     </section>
   </article>
 </main>
 ```
 
-### 1.4 Validation Behaviour
+### 1.4 State Transitions and Focus
 
-**Trigger:** Validation runs on submit attempt only — not on blur, not on keyup. Reasoning: eager validation on a public-facing form creates false errors while users are still typing, which is hostile UX and can confuse screen readers with premature `role="alert"` announcements.
+**On RSVP success:**
+1. Replace the RSVP form (State A) with the already-registered state (State C)
+2. Move focus to `#rsvp-already-registered` (`tabindex="-1"` on the div)
+3. Screen reader reads the `role="status"` content: "You're already registered for this event."
+4. Toast notification: "You're registered! Check your email for confirmation."
 
-**On submit with errors:**
-1. Prevent form submission
-2. Set `aria-invalid="true"` on each invalid field
-3. Inject error text into the corresponding `aria-live="assertive"` span
-4. Move focus to the **first invalid field** (`inputRef.current.focus()`)
-5. Screen reader reads: field label + error message (because `aria-describedby` links them)
+**On RSVP error:**
+1. Inject error text into `#rsvp-form-error` (`role="alert"`)
+2. Screen reader interrupts with the error message immediately
+3. Button returns to interactive state
 
-**On submit success:**
-1. Replace form with success message:
-```html
-<div
-  id="rsvp-success"
-  tabindex="-1"
-  role="status"
->
-  <h2>You're registered!</h2>
-  <p>Check your email for your confirmation and cancel link.</p>
-</div>
-```
-2. Move focus to `#rsvp-success` (the `tabindex="-1"` enables this)
-3. Screen reader reads the `role="status"` content
-
-**Why `role="alert"` on individual errors but `role="status"` on success?**
-`role="alert"` is `aria-live="assertive"` — it interrupts the screen reader immediately. Errors need to be heard right away. `role="status"` is `aria-live="polite"` — it waits for the reader to finish. Success doesn't need to interrupt; the user is expecting the outcome.
+**On page load (unauthenticated → authenticated transition):**
+After sign-in redirect, the user lands back on the event page. The RSVP section must re-render in State A. The `?next` redirect handles this naturally with Next.js.
 
 ### 1.5 Error Message Copy
 
-| Field | Condition | Error text |
-|-------|-----------|------------|
-| Name | Empty | "Please enter your name." |
-| Name | < 2 chars | "Name must be at least 2 characters." |
-| Email | Empty | "Please enter your email address." |
-| Email | Invalid format | "Please enter a valid email address." |
-| Form-level | Already registered | "You're already registered for this event. Check your inbox for your confirmation email." |
-| Form-level | Event full (race) | "This event just reached capacity. You haven't been registered." |
-| Form-level | Server error | "Something went wrong. Please try again." |
+| Condition | Error text |
+|-----------|------------|
+| Already registered | "You're already registered for this event." |
+| Event full (race condition) | "This event just reached capacity. You haven't been registered." |
+| Event not published | "This event is no longer available." |
+| Server error | "Something went wrong. Please try again." |
+| Session expired during submit | Redirect to `/login?next=/events/[id]` (no error shown; re-auth resolves it) |
 
-All error text is prefixed visually with an error icon (❌ decorative, `aria-hidden="true"`). The text alone must be sufficient — no "see the red field" copy.
+All error text is prefixed visually with an error icon (decorative, `aria-hidden="true"`). The text alone must be sufficient — no "see the red field" copy.
 
 ---
 
-## 2. Cancel RSVP (`/events/[id]/cancel`)
+## 2. My RSVPs — Cancel RSVP (`/my-rsvps`)
 
-### 2.1 Tab Order (valid token state)
+The cancel flow is **session-based** (see ADR-006). There is no token-based cancel page. Attendees cancel RSVPs from their `/my-rsvps` dashboard while authenticated. The previous `Cancel RSVP (/events/[id]/cancel)` route is not built in v1.
+
+### 2.1 Tab Order
 
 ```
 [Skip to main content]
-[Event summary — read-only]
-[Cancel my RSVP button]         ← 1 (destructive — secondary styling)
-[Keep my spot button]           ← 2 (primary styling — biased toward retention)
+[Page heading "My RSVPs" — not focusable (h1)]
+[Event 1 title — not focusable]
+[Cancel RSVP button — Event 1]  ← 1 (only shown for confirmed RSVPs)
+[Event 2 title — not focusable]
+[Cancel RSVP button — Event 2]  ← 2
+...
 ```
 
-**Note:** "Keep my spot" is Tab-order second but styled as the visually dominant button. This is intentional: DOM order serves keyboard users (less likely to accidentally cancel by pressing Enter on first button), visual weight serves mouse users who are more likely to click impulsively.
+Cancelled RSVPs show a "Cancelled" badge with no action button.
 
-### 2.2 Focus on Mount
+### 2.2 Cancel Button Behaviour
 
-When the page loads with a valid token, focus is placed programmatically on the page `<h1>`:
+Each confirmed RSVP row has a cancel button. The button triggers a Server Action directly (inline server action via `<form action={cancelRsvpAction}>`).
 
-```tsx
-const headingRef = useRef<HTMLHeadingElement>(null);
-useEffect(() => { headingRef.current?.focus(); }, []);
-
-<h1 ref={headingRef} tabindex="-1">
-  Cancel your RSVP for {event.title}
-</h1>
+```html
+<li>
+  <div>
+    <h2>{{ rsvp.eventSnapshot.title }}</h2>
+    <time datetime="{{ isoDate }}">{{ formattedDate }}</time>
+    <p>{{ rsvp.eventSnapshot.location }}</p>
+  </div>
+  <form
+    action="{{ cancelRsvpAction }}"
+    onsubmit="return confirm('Cancel your RSVP for {{ title }}?')"
+  >
+    <input type="hidden" name="eventId" value="{{ rsvp.eventId }}" />
+    <input type="hidden" name="organizerId" value="{{ rsvp.organizerId }}" />
+    <button
+      type="submit"
+      aria-label="Cancel RSVP for {{ rsvp.eventSnapshot.title }}"
+    >
+      Cancel RSVP
+    </button>
+  </form>
+</li>
 ```
 
-The heading is not interactive — `tabindex="-1"` makes it programmatically focusable without adding it to the tab sequence. Screen reader reads the heading content, orienting the user before they interact.
+**`aria-label` on cancel button:** Because the button text is just "Cancel RSVP" and there may be multiple on the page, `aria-label` disambiguates by including the event title. Screen readers announce: "Cancel RSVP for [Event Title], button."
 
 ### 2.3 Post-Cancellation State
 
-After the organizer confirms cancellation:
+After successful cancellation (server action + `revalidatePath`):
 
-1. Both buttons removed from DOM
-2. Success message rendered:
-```html
-<div id="cancel-success" tabindex="-1" role="status">
-  <h2>Your RSVP has been cancelled.</h2>
-  <p>We hope to see you at a future event.</p>
-</div>
-```
-3. Focus moves to `#cancel-success`
+1. The page revalidates (Next.js Server Component re-renders the RSVP list)
+2. The cancelled RSVP row updates to show "Cancelled" badge with no button
+3. Toast notification: "Your RSVP for [Event Title] has been cancelled."
+
+Focus after form submit returns to the top of the page (default browser behaviour on full navigation). This is acceptable for v1; v2 may add optimistic UI to keep focus in place.
 
 ---
 
@@ -937,31 +944,33 @@ These are written to be directly runnable as manual or automated a11y test cases
 | T-02 | All | Activate skip link → focus lands on `<main>`, content scrolls into view |
 | T-03 | All | `document.title` matches the format `[Page] — EventHub` |
 | T-04 | Event Detail | Page has exactly one `<h1>` containing the event title |
-| T-05 | RSVP Form | Submit empty form → focus moves to Name field → error announced |
-| T-06 | RSVP Form | Submit with invalid email → `aria-invalid="true"` on email input |
-| T-07 | RSVP Form | Successful submit → focus moves to success message |
-| T-08 | RSVP Form | Error text never relies on color alone (icon or text prefix present) |
-| T-09 | Cancel RSVP | Page load → focus on `<h1>` |
-| T-10 | Cancel RSVP | Confirm cancel → focus moves to success banner |
-| T-11 | Cancel RSVP | Invalid token → error message with organizer contact info visible |
-| T-12 | Register | Password show/hide → `aria-pressed` updates; `type` toggles |
-| T-13 | Register | `aria-label` on toggle reads "Show password" when hidden |
-| T-14 | Auth forms | Submit with errors → focus to first invalid field |
-| T-15 | Auth forms | Firebase errors surface as plain-language messages (no raw codes) |
-| T-16 | Event Form | All required fields have `aria-required="true"` |
-| T-17 | Event Form | `aria-describedby` links each input to its hint and error |
-| T-18 | Event Form | Past date submission → inline error on date field, not browser alert |
-| T-19 | Cancel Dialog | Opens → focus on first button |
-| T-20 | Cancel Dialog | Tab cycles within dialog; no focus escapes to background |
-| T-21 | Cancel Dialog | Escape → dialog closes → focus on trigger button |
-| T-22 | Cancel Dialog | Background receives `inert` attribute while dialog is open |
-| T-23 | Share Modal | Opens → focus on `<h2>` |
-| T-24 | Share Modal | Copy → `role="status"` region announces "Link copied to clipboard" |
-| T-25 | Share Modal | Escape / Done → focus returns to Publish button |
-| T-26 | Attendees | Table has `<caption>` with RSVP count |
-| T-27 | Attendees | All `<th>` have `scope="col"` |
-| T-28 | All forms | Color contrast ≥ 4.5:1 for label and input text |
-| T-29 | All | Focus ring visible on all interactive elements (≥ 3:1 contrast) |
-| T-30 | All | No animations play when `prefers-reduced-motion: reduce` is set |
+| T-05 | RSVP (auth) | Authenticated user sees "Reserve my spot" button with no form fields |
+| T-06 | RSVP (auth) | Successful RSVP → focus moves to "You're already registered" status div |
+| T-07 | RSVP (auth) | Already-registered state shows link to `/my-rsvps` |
+| T-08 | RSVP (unauth) | Unauthenticated user sees "Sign in to RSVP" link, not submit button |
+| T-09 | RSVP (unauth) | "Sign in to RSVP" href contains `?next=` with current event path |
+| T-10 | RSVP (error) | Server error → `role="alert"` region announces error message |
+| T-11 | RSVP (error) | Error text never relies on color alone (icon or text prefix present) |
+| T-12 | My RSVPs | Each confirmed RSVP row has cancel button with event-specific `aria-label` |
+| T-13 | My RSVPs | After cancel → toast announces cancellation; row shows "Cancelled" badge |
+| T-14 | Register | Password show/hide → `aria-pressed` updates; `type` toggles |
+| T-15 | Register | `aria-label` on toggle reads "Show password" when hidden |
+| T-16 | Auth forms | Submit with errors → focus to first invalid field |
+| T-17 | Auth forms | Firebase errors surface as plain-language messages (no raw codes) |
+| T-18 | Event Form | All required fields have `aria-required="true"` |
+| T-19 | Event Form | `aria-describedby` links each input to its hint and error |
+| T-20 | Event Form | Past date submission → inline error on date field, not browser alert |
+| T-21 | Cancel Dialog | Opens → focus on first button |
+| T-22 | Cancel Dialog | Tab cycles within dialog; no focus escapes to background |
+| T-23 | Cancel Dialog | Escape → dialog closes → focus on trigger button |
+| T-24 | Cancel Dialog | Background receives `inert` attribute while dialog is open |
+| T-25 | Share Modal | Opens → focus on `<h2>` |
+| T-26 | Share Modal | Copy → `role="status"` region announces "Link copied to clipboard" |
+| T-27 | Share Modal | Escape / Done → focus returns to Publish button |
+| T-28 | Attendees | Table has `<caption>` with RSVP count |
+| T-29 | Attendees | All `<th>` have `scope="col"` |
+| T-30 | All forms | Color contrast ≥ 4.5:1 for label and input text |
+| T-31 | All | Focus ring visible on all interactive elements (≥ 3:1 contrast) |
+| T-32 | All | No animations play when `prefers-reduced-motion: reduce` is set |
 
 ---

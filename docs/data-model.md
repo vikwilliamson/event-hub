@@ -1,6 +1,6 @@
 # EventHub — Firestore Data Model
 
-**Version:** 1.0 · **Depends on:** PRD v1.1, ADR-003 · **Status:** Draft
+**Version:** 1.1 · **Depends on:** PRD v1.2, ADR-003, ADR-006 · **Status:** Draft
 
 ---
 
@@ -34,7 +34,7 @@ No polymorphic documents, no deeply nested arrays of objects, no collection grou
 That is the entire database. Four collection levels, no flat cross-cutting collections, no join documents.
 
 **Why organizers is a separate top-level collection from users?**
-In v1, every authenticated user _is_ an organizer — there is no attendee account. But the data they store is different: a `user` document holds auth profile data, an `organizer` document holds business-facing fields (display name, event count). Keeping them separate means we can add non-organizer accounts in v2 (e.g., attendees who register) without migrating the organizer schema. The documents share the same `userId` as their document ID, making the join trivial and free.
+In v1, both organizers and attendees have Firebase Auth accounts, but they operate differently: an organizer creates events and manages them via the dashboard; an attendee discovers events and RSVPs. The `organizer` document holds business-facing fields (display name, event count) that an attendee profile doesn't need. Keeping them separate means the `/organizers/{uid}` path remains an accurate structural constraint — organizer data lives there, and attendee RSVP history is queryable via the `rsvps` subcollection using `userId`. The documents share the same `userId` as their document ID, making the join trivial and free. Not every authenticated user has an `organizers/{uid}` document — only those who have gone through the organizer registration flow.
 
 ---
 
@@ -140,50 +140,37 @@ A boolean cannot represent the three states: draft, published, cancelled. Enums 
 ```ts
 // src/types/rsvp.types.ts
 
-type RsvpStatus = "confirmed" | "cancelled";
-
 interface RsvpDoc {
   // Identity
-  id: string; // deterministic: hash of (eventId + normalizedEmail)
-  eventId: string; // redundant with path but useful in Cloud Functions
+  id: string;       // document ID = userId (ensures one RSVP per user per event)
+  eventId: string;  // redundant with path but useful in Cloud Functions
+  userId: string;   // Firebase Auth UID of the attendee
   organizerId: string; // redundant with path; enables organizer-scoped queries
 
-  // Attendee
-  attendeeName: string;
-  attendeeEmail: string; // stored in plaintext; only readable by the event organizer
-
-  // Cancel token
-  cancelToken: string; // HMAC-signed token; used to authorize cancellation
-  cancelTokenExpiresAt: Timestamp;
-
-  // Status
-  status: RsvpStatus;
+  // Event snapshot (denormalized for My RSVPs display without extra reads)
+  eventSnapshot: {
+    title: string;
+    startsAt: Timestamp;
+    location: string;
+  };
 
   // Timestamps
   createdAt: Timestamp;
-  updatedAt: Timestamp;
-  cancelledAt: Timestamp | null;
+  cancelledAt: Timestamp | null; // null = confirmed; non-null = cancelled
 }
 ```
 
-**Deterministic document ID for idempotency.**
-`rsvpId = sha256(eventId + ":" + normalizedEmail)` where `normalizedEmail = email.toLowerCase().trim()`.
+**Document ID = `userId` for structural idempotency.**
+Because the document ID is the attendee's Firebase Auth UID, a second RSVP attempt by the same user writes to the same document path. The transaction checks whether the document already exists with `cancelledAt === null` — if so, it returns `ALREADY_REGISTERED`. No hash function needed, no prior read outside the transaction.
 
-This means if the same email submits the RSVP form twice:
+**No `status` field — `cancelledAt` is the source of truth.**
+A document with `cancelledAt: null` is a confirmed RSVP. A document with a non-null `cancelledAt` is cancelled. This avoids a two-field consistency problem (both `status` and `cancelledAt` would need to be set atomically). Queries filter on `cancelledAt == null` instead of `status == "confirmed"`.
 
-- The `tx.set(rsvpRef, data)` call overwrites the existing document (same ID)
-- `rsvpCount` on the event is **not** incremented again (the transaction checks `status` of the existing doc first)
-- The user receives a new confirmation email with a fresh cancel token
+**`eventSnapshot` is denormalized for `/my-rsvps` display.**
+The My RSVPs page lists all of an attendee's RSVPs with title, date, and location. Without the snapshot, every RSVP would require a separate event document read. With it, the entire My RSVPs list renders from a single collection-group query. The snapshot is set at RSVP creation time and is not updated if the organizer edits the event — this is acceptable in v1 (attendees are not notified of changes in v1 regardless).
 
-No unique index, no prior read — the document ID itself enforces uniqueness.
-
-**`cancelToken` lives on the RSVP document, not in a separate collection.**
-The cancel flow: attendee clicks link → Server Action receives `eventId` + `token` → queries RSVP by `cancelToken` field → verifies HMAC + expiry → sets `status = 'cancelled'`.
-
-Alternative considered: a separate `/cancelTokens/{token}` collection. Rejected because it adds a collection for a single field, and querying by a field on the rsvp document (with an index) is sufficient and keeps all RSVP state co-located.
-
-**`attendeeEmail` privacy.**
-Attendee email is sensitive PII. Security Rules ensure only the event organizer can read RSVP documents. Attendees cannot read each other's data — they cannot even read their own RSVP document (they have no account). The cancel flow authenticates via token, not session, so no RSVP read is exposed to an unauthenticated client.
+**Attendee email and display name are not stored on the RSVP document.**
+They are resolved on-demand from Firebase Auth Admin (`getAdminAuth().getUsers([{uid}])`) when the organizer loads the attendee list. This avoids duplicating PII into Firestore and keeps the authoritative name/email in Firebase Auth only. The organizer attendee list view does an extra Auth lookup; this is acceptable because the list is a low-frequency, admin-only read.
 
 ---
 
@@ -223,17 +210,17 @@ export interface Event {
 }
 
 export interface Rsvp {
-  id: string;
+  id: string;         // = userId
   eventId: string;
+  userId: string;
   organizerId: string;
-  attendeeName: string;
-  attendeeEmail: string;
-  cancelToken: string;
-  cancelTokenExpiresAt: Date;
-  status: "confirmed" | "cancelled";
+  eventSnapshot: {
+    title: string;
+    startsAt: Date;   // converted from Timestamp on read
+    location: string;
+  };
   createdAt: Date;
-  updatedAt: Date;
-  cancelledAt: Date | null;
+  cancelledAt: Date | null; // null = confirmed; non-null = cancelled
 }
 
 // ─── Firestore document types (raw storage shape) ─────────────────────────
@@ -353,13 +340,14 @@ await db.runTransaction(async (tx) => {
     .doc(eventId)
     .withConverter(eventConverter);
 
+  // Doc ID = userId — structural idempotency, no hash needed
   const rsvpRef = db
     .collection("organizers")
     .doc(organizerId)
     .collection("events")
     .doc(eventId)
     .collection("rsvps")
-    .doc(rsvpId); // deterministic ID
+    .doc(userId);
 
   const eventSnap = await tx.get(eventRef);
   const event = eventSnap.data();
@@ -372,14 +360,13 @@ await db.runTransaction(async (tx) => {
     throw new AppError("Event is at capacity", "CAPACITY_EXCEEDED", 409);
   }
 
-  // Check if this email already has an RSVP (read within transaction)
+  // Check if this user already has an active RSVP (read within transaction)
   const existingSnap = await tx.get(rsvpRef);
-  if (existingSnap.exists && existingSnap.data()!.status === "confirmed") {
+  if (existingSnap.exists && existingSnap.data()!.cancelledAt === null) {
     throw new AppError("Already registered", "ALREADY_REGISTERED", 409);
   }
 
-  const isNew =
-    !existingSnap.exists || existingSnap.data()!.status === "cancelled";
+  const isNew = !existingSnap.exists || existingSnap.data()!.cancelledAt !== null;
 
   tx.set(rsvpRef, rsvpData);
 
@@ -407,60 +394,74 @@ const rsvpsRef = db
   .collection("events")
   .doc(eventId)
   .collection("rsvps")
-  .where("status", "==", "confirmed")
+  .where("cancelledAt", "==", null)
   .orderBy("createdAt", "asc");
 
 const snap = await rsvpsRef.get();
 ```
 
-**Index required:** Composite index on `rsvps`: `(status ASC, createdAt ASC)`.
-Firestore requires a composite index for any query combining `where` + `orderBy` on different fields.
+**Index required:** Composite index on `rsvps`: `(cancelledAt ASC, createdAt ASC)`.
+Firestore requires a composite index for any query combining `where` + `orderBy` on different fields. Filtering `cancelledAt == null` is a standard Firestore equality filter and is indexed the same way as any other field.
 
 ---
 
-### Q5 — Cancel RSVP by token
+### Q5 — Cancel RSVP (auth-based)
 
-**Find an RSVP document by its cancel token (no auth — token is the credential).**
+**Cancel an authenticated attendee's own RSVP by direct document reference.**
 
 ```ts
-// Note: this is a collection group query across all rsvps subcollections
-// scoped to a known event path to limit scan surface
-const rsvpsRef = db
+// The attendee's UID is both the session credential and the document ID —
+// no query needed; the path is the credential.
+const rsvpRef = db
   .collection("organizers")
   .doc(organizerId)
   .collection("events")
   .doc(eventId)
   .collection("rsvps")
-  .where("cancelToken", "==", incomingToken)
-  .where("status", "==", "confirmed")
-  .limit(1);
+  .doc(userId); // userId from verified session cookie
 
-const snap = await rsvpsRef.get();
+await db.runTransaction(async (tx) => {
+  const rsvpSnap = await tx.get(rsvpRef);
+  const eventSnap = await tx.get(eventRef);
+
+  if (!rsvpSnap.exists || rsvpSnap.data()!.cancelledAt !== null) {
+    throw new AppError("RSVP not found or already cancelled", "NOT_FOUND", 404);
+  }
+
+  tx.update(rsvpRef, { cancelledAt: Timestamp.now() });
+  tx.update(eventRef, {
+    rsvpCount: FieldValue.increment(-1),
+    updatedAt: Timestamp.now(),
+  });
+});
 ```
 
-**Index required:** Composite index on `rsvps`: `(cancelToken ASC, status ASC)`.
-**Security note:** The token is an HMAC-signed value. Firestore Security Rules cannot verify HMAC — this query runs server-side only (Admin SDK in a Server Action). The token is never queried client-side. Brute-forcing is infeasible: tokens are 32 bytes of cryptographic randomness.
+**Index required:** None — direct document read by known path.
+**Security note:** The session cookie (verified via `getSession()` in the Server Action) is the sole credential. The document ID is the user's UID — an attendee can only cancel their own RSVP, since `userId` from their session is used as the document path. No token infrastructure required.
 
 ---
 
-### Q6 — "My Events" — future published events (v2 attendee feature placeholder)
+### Q6 — "My RSVPs" — attendee's own RSVP history (implemented in v1)
 
-**Not in v1 — attendees have no accounts. Documented here to confirm the schema supports it.**
-
-If attendee accounts are added in v2:
+**All RSVPs for the authenticated attendee, across all events, newest first.**
 
 ```ts
-// Would require a top-level /rsvps collection or a collection group index
-// Current subcollection model supports this via collection group query:
+// Collection group query: scans all rsvps subcollections across the database
+// filtered by the current user's UID.
 const myRsvps = db
   .collectionGroup("rsvps")
-  .where("attendeeEmail", "==", currentUserEmail)
-  .where("status", "==", "confirmed")
+  .where("userId", "==", session.uid)
+  .where("cancelledAt", "==", null)
   .orderBy("createdAt", "desc");
+
+const snap = await myRsvps.get();
+// Each document includes eventSnapshot.{title, startsAt, location}
+// — no additional event reads needed for display
 ```
 
-**Collection group index required:** `(attendeeEmail ASC, status ASC, createdAt DESC)`.
-This index does not need to be created in v1 — it's documented here to confirm the schema doesn't prevent this query. The subcollection model supports collection group queries natively.
+**Collection group index required:** `(userId ASC, cancelledAt ASC, createdAt DESC)`.
+This must be deployed to Firestore before the `/my-rsvps` page goes live. See §6.
+**Note:** Showing cancelled RSVPs (e.g., a "past RSVPs" section) would remove the `cancelledAt == null` filter and sort by `cancelledAt DESC` instead — the index would need to be updated at that point.
 
 ---
 
@@ -473,16 +474,17 @@ This index does not need to be created in v1 — it's documented here to confirm
       "collectionGroup": "rsvps",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "cancelledAt", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "ASCENDING" }
       ]
     },
     {
       "collectionGroup": "rsvps",
-      "queryScope": "COLLECTION",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "cancelToken", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "cancelledAt", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     }
   ],
@@ -490,7 +492,13 @@ This index does not need to be created in v1 — it's documented here to confirm
 }
 ```
 
-**Only two composite indexes for the entire v1 data model.** Both are on the `rsvps` subcollection. The events collection requires no composite indexes in v1 because the organizer dashboard query uses a single `orderBy` field (covered by Firestore's automatic single-field indexes).
+**Two composite indexes for the entire v1 data model:**
+
+1. **`(cancelledAt, createdAt)` — COLLECTION scope.** Used by Q4 (organizer's confirmed attendee list for a specific event). The `COLLECTION` scope means it only applies within a single `rsvps` subcollection, not across all subcollections.
+
+2. **`(userId, cancelledAt, createdAt)` — COLLECTION_GROUP scope.** Used by Q6 (My RSVPs — attendee's own RSVP history). The `COLLECTION_GROUP` scope lets Firestore search across all `rsvps` subcollections in the database filtered by `userId`.
+
+The events collection requires no composite indexes in v1 because the organizer dashboard query uses a single `orderBy` field (covered by Firestore's automatic single-field indexes). The `cancelToken` index from the email-only model is not needed.
 
 ---
 
@@ -522,7 +530,8 @@ organizers/{uid}           Owner (full), Public (display    Owner only
 events/{uid}/events/{id}   Public if published,             Owner (organizer) only
                            Owner always
 events/.../rsvps/{id}      Owner (organizer) only           Server-side only (Admin SDK)
-                           Attendees: never (no account)    No client writes
+                           Attendee: own RSVPs via          No client writes
+                           getMyRsvps() server action
 ```
 
 **Key principle: RSVPs are never written or read by the client SDK.**
@@ -553,7 +562,8 @@ No `WHERE organizerId = currentUser.uid` queries needed. The path _is_ the owner
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | Full-text search            | Firestore has no native full-text search. Implementing it requires Algolia/Typesense or a Cloud Function that syncs to a search index — not justified for v1's link-sharing model | Add Algolia sync on event publish Cloud Function                                                            |
 | Tags / categories on events | Not in v1 scope                                                                                                                                                                   | Add `tags: string[]` field; add composite index on `(status, tags array-contains, startsAt)`                |
-| Attendee accounts           | Attendees have no auth in v1                                                                                                                                                      | Add `/attendees/{uid}` collection; `rsvps` gains `attendeeId` field; collection group index on `attendeeId` |
+| Separate attendee profile   | Auth profile (displayName, email) lives in Firebase Auth; no separate Firestore record needed in v1                                                                               | Add `/attendees/{uid}` collection for extended profile (bio, notification prefs, etc.)                      |
+| RSVP snapshot sync          | `eventSnapshot` on RSVP is set at creation and not updated if organizer edits the event                                                                                           | Cloud Function propagates event field changes to `eventSnapshot` on all RSVPs; or re-query event on display |
 | Event images                | No Storage in v1                                                                                                                                                                  | Add `coverImageUrl: string \| null` to `EventDoc`; Cloud Function generates thumbnail URL                   |
 | Waitlist                    | Capacity closes RSVPs in v1                                                                                                                                                       | Add `waitlist` subcollection parallel to `rsvps`; promote on cancellation                                   |
 
