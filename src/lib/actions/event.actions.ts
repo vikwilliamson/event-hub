@@ -2,13 +2,15 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { getAdminFirestore } from "@/lib/firebase/admin";
+import { getAdminFirestore, getAdminAuth } from "@/lib/firebase/admin";
 import { eventConverter } from "@/lib/firebase/converters";
 import { getSession } from "@/lib/firebase/auth.server";
 import { getEvent, getEventRef } from "@/lib/firebase/db";
+import { getEventRsvps } from "@/lib/firebase/rsvp-db";
 import type { Event, EventStatus } from "@/lib/firebase/types";
 import { normalizeError } from "@/lib/utils/errors";
 import { validateCreateEventPayload } from "@/lib/validations/event.schema";
+import { sendEventCancellationEmail } from "@/lib/email";
 
 export type CreateEventResult =
   | { ok: true; data: { eventId: string } }
@@ -166,6 +168,38 @@ export async function cancelEvent(eventId: string): Promise<CancelEventResult> {
       cancelledAt: now,
       updatedAt: now,
     });
+
+    // Fire-and-forget cancellation emails to all confirmed attendees
+    const cancelledEvent = existing;
+    void (async () => {
+      try {
+        const rsvps = await getEventRsvps(session.uid, eventId);
+        if (rsvps.length === 0) return;
+
+        const identifiers = rsvps.map((r) => ({ uid: r.userId }));
+        const authResult = await getAdminAuth().getUsers(identifiers);
+        const userMap = new Map(authResult.users.map((u) => [u.uid, u]));
+
+        await Promise.allSettled(
+          rsvps.map((rsvp) => {
+            const authUser = userMap.get(rsvp.userId);
+            if (!authUser?.email) return Promise.resolve();
+            const displayName =
+              authUser.displayName ?? authUser.email.split("@")[0] ?? "there";
+            return sendEventCancellationEmail({
+              to: authUser.email,
+              displayName,
+              event: cancelledEvent,
+            });
+          })
+        );
+      } catch (err) {
+        console.warn(
+          "[email] event cancellation emails failed:",
+          err instanceof Error ? err.message : String(err)
+        );
+      }
+    })();
 
     revalidatePath(`/dashboard/events/${eventId}`);
     revalidatePath("/dashboard");
