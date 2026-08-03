@@ -22,6 +22,16 @@ const SERVER_ONLY_PATTERNS = [
 const config = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
+    // Underscore prefix marks intentionally unused params (e.g. advisory
+    // organizerId args kept for signature compatibility with the old API).
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
+  {
     // Prevent client components from importing server-only Firebase modules.
     // Server actions, API routes, and firebase lib files are excluded below.
     files: ["src/components/**/*.{ts,tsx}", "src/hooks/**/*.{ts,tsx}", "src/app/**/*.{ts,tsx}"],

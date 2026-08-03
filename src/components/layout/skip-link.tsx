@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-
 /**
  * Skip link: first focusable element, visible on focus. Jumps to main content.
  * WCAG 2.4.1 Bypass Blocks (Level A). Place at the very start of the layout.
