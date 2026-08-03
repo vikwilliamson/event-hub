@@ -12,7 +12,7 @@ interface AnalyticsSummary {
   avgPerformance: number;
 }
 
-interface AnalyticsData {
+export interface AnalyticsData {
   summary: AnalyticsSummary;
   popularPages: Array<{ page: string; count: number }>;
   commonActions: Array<{ action: string; count: number }>;

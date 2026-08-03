@@ -72,7 +72,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </h2>
             
             <p className="text-neutral-600 text-center mb-6">
-              We're sorry, but something unexpected happened. The error has been logged.
+              We&apos;re sorry, but something unexpected happened. The error has been logged.
             </p>
 
             <div className="space-y-3">

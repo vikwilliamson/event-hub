@@ -7,14 +7,14 @@ export interface LogEntry {
   timestamp: string;
   level: 'info' | 'warn' | 'error';
   message: string;
-  context?: Record<string, any>;
+  context?: Record<string, unknown>;
 }
 
 class Logger {
   private logs: LogEntry[] = [];
   private maxLogs = 1000; // Keep last 1000 logs in memory
 
-  private createLogEntry(level: LogEntry['level'], message: string, context?: Record<string, any>): LogEntry {
+  private createLogEntry(level: LogEntry['level'], message: string, context?: Record<string, unknown>): LogEntry {
     return {
       timestamp: new Date().toISOString(),
       level,
@@ -23,7 +23,7 @@ class Logger {
     };
   }
 
-  info(message: string, context?: Record<string, any>) {
+  info(message: string, context?: Record<string, unknown>) {
     const entry = this.createLogEntry('info', message, context);
     this.addLog(entry);
     
@@ -32,7 +32,7 @@ class Logger {
     }
   }
 
-  warn(message: string, context?: Record<string, any>) {
+  warn(message: string, context?: Record<string, unknown>) {
     const entry = this.createLogEntry('warn', message, context);
     this.addLog(entry);
     
@@ -41,7 +41,7 @@ class Logger {
     }
   }
 
-  error(message: string, context?: Record<string, any>) {
+  error(message: string, context?: Record<string, unknown>) {
     const entry = this.createLogEntry('error', message, context);
     this.addLog(entry);
     

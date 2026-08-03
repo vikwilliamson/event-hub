@@ -1,20 +1,19 @@
 import { z } from "zod";
 
+/**
+ * All external-service variables are optional: the demo runs entirely on the
+ * local file store with no Firebase, email, maps, or AI keys configured.
+ * Features that need a key degrade gracefully when it is absent.
+ */
 const envSchema = z.object({
-  // Firebase Client (public)
-  NEXT_PUBLIC_FIREBASE_API_KEY: z.string().min(1, "Firebase API key is required"),
-  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: z.string().min(1, "Firebase auth domain is required"),
-  NEXT_PUBLIC_FIREBASE_PROJECT_ID: z.string().min(1, "Firebase project ID is required"),
-  NEXT_PUBLIC_FIREBASE_APP_ID: z.string().min(1, "Firebase app ID is required"),
-
-  // Firebase Admin (server-only)
-  FIREBASE_ADMIN_PROJECT_ID: z.string().min(1, "Firebase admin project ID is required"),
-  FIREBASE_ADMIN_CLIENT_EMAIL: z
-    .string()
-    .email("Firebase admin client email must be valid"),
-  FIREBASE_ADMIN_PRIVATE_KEY: z
-    .string()
-    .min(1, "Firebase admin private key is required"),
+  // Firebase (legacy — unused by the local-store runtime, kept for forward compat)
+  NEXT_PUBLIC_FIREBASE_API_KEY: z.string().optional(),
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: z.string().optional(),
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: z.string().optional(),
+  NEXT_PUBLIC_FIREBASE_APP_ID: z.string().optional(),
+  FIREBASE_ADMIN_PROJECT_ID: z.string().optional(),
+  FIREBASE_ADMIN_CLIENT_EMAIL: z.string().optional(),
+  FIREBASE_ADMIN_PRIVATE_KEY: z.string().optional(),
 
   // Session
   SESSION_COOKIE_NAME: z.string().optional(),
@@ -23,18 +22,21 @@ const envSchema = z.object({
   // App URL
   NEXT_PUBLIC_APP_URL: z.string().url("App URL must be a valid URL").optional(),
 
+  // Local store
+  EVENTHUB_DATA_FILE: z.string().optional(),
+
   // Email
   EMAIL_PROVIDER_API_KEY: z.string().optional(),
   EMAIL_FROM_ADDRESS: z.string().email("Email from address must be valid").optional(),
 
-  // Security
-  CANCEL_TOKEN_SECRET: z.string().min(32, "Cancel token secret must be at least 32 characters").optional(),
+  // Maps
+  NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: z.string().optional(),
 
   // AI
   ANTHROPIC_API_KEY: z.string().optional(),
 });
 
-function validateEnv() {
+function validateEnv(): z.infer<typeof envSchema> {
   const result = envSchema.safeParse(process.env);
 
   if (!result.success) {
@@ -43,32 +45,17 @@ function validateEnv() {
       .map(([field, messages]) => `  ${field}: ${messages?.join(", ")}`)
       .join("\n");
 
-    if (process.env.NODE_ENV === "development") {
-      console.warn(
-        "⚠️  Environment variables missing or invalid. Some features may not work.\n" +
-          fieldErrors
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        `❌ Environment validation failed:\n${fieldErrors}\n\nSee .env.example for variables.`
       );
-      return {
-        NEXT_PUBLIC_FIREBASE_API_KEY: "",
-        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "",
-        NEXT_PUBLIC_FIREBASE_PROJECT_ID: "",
-        NEXT_PUBLIC_FIREBASE_APP_ID: "",
-        FIREBASE_ADMIN_PROJECT_ID: "",
-        FIREBASE_ADMIN_CLIENT_EMAIL: "",
-        FIREBASE_ADMIN_PRIVATE_KEY: "",
-        SESSION_COOKIE_NAME: "session",
-        NODE_ENV: "development" as const,
-        NEXT_PUBLIC_APP_URL: undefined,
-        EMAIL_PROVIDER_API_KEY: undefined,
-        EMAIL_FROM_ADDRESS: undefined,
-        CANCEL_TOKEN_SECRET: undefined,
-        ANTHROPIC_API_KEY: undefined,
-      };
     }
 
-    throw new Error(
-      `❌ Environment validation failed:\n${fieldErrors}\n\nSee .env.example for required variables.`
+    console.warn(
+      "⚠️  Environment variables invalid; falling back to defaults. Some features may not work.\n" +
+        fieldErrors
     );
+    return envSchema.parse({ NODE_ENV: process.env.NODE_ENV ?? "development" });
   }
 
   return result.data;

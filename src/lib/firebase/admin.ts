@@ -6,6 +6,15 @@ import { env } from "@/lib/env";
 /** Singleton Firebase Admin app. Use only on the server. */
 function getAdminApp(): App {
   if (getApps().length === 0) {
+    if (
+      !env.FIREBASE_ADMIN_PRIVATE_KEY ||
+      !env.FIREBASE_ADMIN_PROJECT_ID ||
+      !env.FIREBASE_ADMIN_CLIENT_EMAIL
+    ) {
+      throw new Error(
+        "Firebase Admin credentials are not configured. The demo runs on the local store; Firebase is not required."
+      );
+    }
     const privateKey = env.FIREBASE_ADMIN_PRIVATE_KEY.replace(/\\n/g, "\n");
     
     return initializeApp({

@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { analytics } from '@/lib/observability/analytics';
+import { analytics, type AnalyticsData } from '@/lib/observability/analytics';
 import { logger } from '@/lib/observability/logger';
 import { Button } from '@/components/ui/button';
 
 export function AnalyticsDashboard() {
-  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [isEnabled, setIsEnabled] = useState(true);
 
   useEffect(() => {
@@ -112,7 +112,7 @@ export function AnalyticsDashboard() {
           <h3 className="text-lg font-semibold text-neutral-900 mb-4">Popular Pages</h3>
           {analyticsData.popularPages.length > 0 ? (
             <div className="space-y-3">
-              {analyticsData.popularPages.map((page: any, index: number) => (
+              {analyticsData.popularPages.map((page, index) => (
                 <div key={index} className="flex justify-between items-center">
                   <span className="text-neutral-700">{page.page}</span>
                   <span className="text-neutral-600 font-medium">{page.count} views</span>
@@ -129,7 +129,7 @@ export function AnalyticsDashboard() {
           <h3 className="text-lg font-semibold text-neutral-900 mb-4">Common Actions</h3>
           {analyticsData.commonActions.length > 0 ? (
             <div className="space-y-3">
-              {analyticsData.commonActions.map((action: any, index: number) => (
+              {analyticsData.commonActions.map((action, index) => (
                 <div key={index} className="flex justify-between items-center">
                   <span className="text-neutral-700">{action.action}</span>
                   <span className="text-neutral-600 font-medium">{action.count} times</span>

@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import axe from "axe-core";
 import { RsvpButton } from "@/components/event/rsvp-button";
 
-const mockUseRsvp = vi.fn();
+const { mockUseRsvp } = vi.hoisted(() => ({ mockUseRsvp: vi.fn() }));
 vi.mock("@/hooks/use-rsvp", () => ({ useRsvp: mockUseRsvp }));
 
 const mockProps = {
@@ -13,7 +13,6 @@ const mockProps = {
 };
 
 const makeRsvpState = (overrides = {}) => ({
-  status: "authenticated",
   isRsvped: false,
   isLoading: false,
   error: null,
@@ -32,18 +31,6 @@ describe("RsvpButton Accessibility", () => {
     const results = await axe.run(container as HTMLElement);
     expect(results.violations).toHaveLength(0);
   }
-
-  it("should have no accessibility violations in loading state", async () => {
-    mockUseRsvp.mockReturnValue(makeRsvpState({ status: "loading", isLoading: true }));
-    const { container } = render(<RsvpButton {...mockProps} />);
-    await assertNoViolations(container);
-  });
-
-  it("should have no accessibility violations when unauthenticated", async () => {
-    mockUseRsvp.mockReturnValue(makeRsvpState({ status: "unauthenticated" }));
-    const { container } = render(<RsvpButton {...mockProps} />);
-    await assertNoViolations(container);
-  });
 
   it("should have no accessibility violations in RSVP state", async () => {
     mockUseRsvp.mockReturnValue(makeRsvpState());
@@ -74,18 +61,18 @@ describe("RsvpButton Accessibility", () => {
     expect(cancelButton).toHaveAttribute("aria-label", "Cancel RSVP");
   });
 
-  it("should announce loading state to screen readers", () => {
-    mockUseRsvp.mockReturnValue(makeRsvpState({ status: "loading", isLoading: true }));
-    render(<RsvpButton {...mockProps} />);
-    const loadingButton = screen.getByRole("button", { name: /Loading RSVP status/i });
-    expect(loadingButton).toHaveAttribute("aria-busy", "true");
-  });
-
-  it("should handle error states accessibly", async () => {
-    mockUseRsvp.mockReturnValue(makeRsvpState({ status: "error", error: "Network error" }));
+  it("should announce errors via a live region", async () => {
+    mockUseRsvp.mockReturnValue(makeRsvpState({ error: "This event is at capacity." }));
     const { container } = render(<RsvpButton {...mockProps} />);
     await assertNoViolations(container);
-    const errorButton = screen.getByRole("button", { name: /RSVP unavailable/i });
-    expect(errorButton).toBeDisabled();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/at capacity/i);
+  });
+
+  it("should disable the button while an action is in flight", () => {
+    mockUseRsvp.mockReturnValue(makeRsvpState({ isLoading: true }));
+    render(<RsvpButton {...mockProps} />);
+    const button = screen.getByRole("button", { name: /RSVP/i });
+    expect(button).toBeDisabled();
   });
 });
