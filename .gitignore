@@ -42,3 +42,13 @@ coverage/
 # Temporary folders
 tmp/
 temp/
+
+# Local demo store
+data/
+
+# TypeScript
+tsconfig.tsbuildinfo
+
+# Test artifacts
+playwright-report/
+test-results/
