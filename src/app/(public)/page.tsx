@@ -16,7 +16,7 @@ export default function HomePage() {
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link
-            href="/register"
+            href="/dashboard/events/new"
             className="inline-flex items-center justify-center rounded-md bg-neutral-900 px-6 py-3 text-base font-medium text-white hover:bg-neutral-800 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2"
           >
             Create your first event
@@ -48,8 +48,8 @@ export default function HomePage() {
             </span>
             <h3 className="font-semibold text-neutral-900">Create an event</h3>
             <p className="text-neutral-600 text-sm">
-              Sign up as an organizer and fill in your event details — title, date, location,
-              and optional capacity.
+              Fill in your event details — title, date, location, and optional
+              capacity. No sign-up needed.
             </p>
           </li>
           <li className="flex flex-col items-center text-center gap-3">

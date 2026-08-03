@@ -51,7 +51,7 @@ export default async function DashboardPage() {
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-neutral-900">Your Events</h2>
         <Link 
-          href="/events/create"
+          href="/dashboard/events/new"
           className="rounded bg-neutral-900 px-4 py-2 text-white hover:bg-neutral-800 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2"
         >
           Create Event
@@ -65,7 +65,7 @@ export default async function DashboardPage() {
             Create your first event to get started.
           </p>
           <Link 
-            href="/events/create"
+            href="/dashboard/events/new"
             className="rounded bg-neutral-900 px-6 py-3 text-white hover:bg-neutral-800 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2"
           >
             Create Your First Event

@@ -5,6 +5,7 @@ import { getDemoSession } from "@/lib/session";
 import { getOwnedEvent } from "@/lib/events-organizer";
 import { cancelEvent, toggleEventStatus } from "@/lib/actions/event.actions";
 import { Button } from "@/components/ui/button";
+import { CancelEventForm } from "@/components/event/cancel-event-form";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -92,18 +93,7 @@ export default async function OrganizerEventPage({ params }: Props) {
               </Button>
             </form>
 
-            <form
-              action={handleCancel}
-              onSubmit={(e) => {
-                if (!confirm("Cancel this event? This cannot be undone.")) {
-                  e.preventDefault();
-                }
-              }}
-            >
-              <Button type="submit" variant="danger">
-                Cancel event
-              </Button>
-            </form>
+            <CancelEventForm action={handleCancel} />
           </>
         )}
 
