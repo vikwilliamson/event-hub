@@ -1,12 +1,45 @@
-import { getAllPublishedEvents } from "@/lib/firebase/public-db";
+import { getAllPublishedEvents } from "@/lib/events-public";
+import { searchEvents, parseEventSearchParams, type RawSearchParams } from "@/lib/search";
+import { haversineKm } from "@/lib/geo";
+import type { Event } from "@/lib/types";
 import { EventCard } from "@/components/event/event-card";
+import { EventSearchForm } from "@/components/event/event-search-form";
+import { EventsMap } from "@/components/event/events-map";
 import Link from "next/link";
 
-export default async function EventsPage() {
-  const events = await getAllPublishedEvents();
+interface EventsPageProps {
+  searchParams: Promise<RawSearchParams>;
+}
 
-  const upcomingEvents = events.filter(event => event.startsAt > new Date());
-  const pastEvents = events.filter(event => event.startsAt <= new Date());
+export default async function EventsPage({ searchParams }: EventsPageProps) {
+  const params = await searchParams;
+  const query = parseEventSearchParams(params);
+  const hasActiveFilters = Object.keys(query).length > 0;
+
+  const allEvents = await getAllPublishedEvents();
+  const events = searchEvents(allEvents, query);
+
+  const now = new Date();
+  const upcomingEvents = events.filter((event) => event.startsAt > now);
+  const pastEvents = events.filter((event) => event.startsAt <= now);
+
+  const center = query.near ?? null;
+  const distanceFor = (event: Event) =>
+    center && event.lat !== null && event.lng !== null
+      ? haversineKm(center, { lat: event.lat, lng: event.lng })
+      : undefined;
+
+  const mapEvents = upcomingEvents
+    .filter((event) => event.lat !== null && event.lng !== null)
+    .map((event) => ({
+      id: event.id,
+      title: event.title,
+      lat: event.lat as number,
+      lng: event.lng as number,
+    }));
+
+  const first = (value: string | string[] | undefined) =>
+    Array.isArray(value) ? value[0] : value;
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-4">
@@ -29,12 +62,24 @@ export default async function EventsPage() {
         </Link>
       </div>
 
+      <EventSearchForm
+        defaults={{
+          q: first(params.q),
+          category: first(params.category),
+          near: first(params.near),
+          radius: first(params.radius),
+        }}
+        hasActiveFilters={hasActiveFilters}
+      />
+
+      <EventsMap events={mapEvents} center={center} />
+
       {upcomingEvents.length > 0 && (
         <section className="mb-12">
           <h2 className="text-2xl font-semibold text-neutral-900 mb-6">Upcoming Events</h2>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {upcomingEvents.map((event) => (
-              <EventCard key={event.id} event={event} />
+              <EventCard key={event.id} event={event} distanceKm={distanceFor(event)} />
             ))}
           </div>
         </section>
@@ -45,7 +90,7 @@ export default async function EventsPage() {
           <h2 className="text-2xl font-semibold text-neutral-900 mb-6">Past Events</h2>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {pastEvents.map((event) => (
-              <EventCard key={event.id} event={event} />
+              <EventCard key={event.id} event={event} distanceKm={distanceFor(event)} />
             ))}
           </div>
         </section>
@@ -58,7 +103,9 @@ export default async function EventsPage() {
           </svg>
           <h3 className="text-lg font-medium text-neutral-900 mb-2">No events found</h3>
           <p className="text-neutral-600">
-            There are no published events yet. Check back later!
+            {hasActiveFilters
+              ? "No events match your filters. Try widening the search."
+              : "There are no published events yet. Check back later!"}
           </p>
         </div>
       )}

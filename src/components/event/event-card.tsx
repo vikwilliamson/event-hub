@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { RsvpButton } from "./rsvp-button";
-import type { Event } from "@/lib/firebase/types";
+import type { Event } from "@/lib/types";
 
 interface EventCardProps {
   event: Event;
+  /** Distance from the active search center; renders a badge when set. */
+  distanceKm?: number;
   className?: string;
 }
 
@@ -11,7 +13,7 @@ interface EventCardProps {
  * Event card component for displaying events in a list/grid.
  * Shows key event information and RSVP functionality.
  */
-export function EventCard({ event, className }: EventCardProps) {
+export function EventCard({ event, distanceKm, className }: EventCardProps) {
   const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat("en-US", {
       month: "short",
@@ -73,7 +75,12 @@ export function EventCard({ event, className }: EventCardProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
-          {event.location}
+          {event.venueName ? `${event.venueName} · ${event.location}` : event.location}
+          {distanceKm !== undefined && (
+            <span className="ml-2 inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700">
+              {distanceKm < 1 ? "<1" : Math.round(distanceKm)} km away
+            </span>
+          )}
         </div>
 
         <div className="flex items-center text-sm text-neutral-600">

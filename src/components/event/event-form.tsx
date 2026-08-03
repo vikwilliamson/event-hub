@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createEventFormSchema, type CreateEventFormData } from "@/lib/validations/event.schema";
+import { EVENT_CATEGORIES } from "@/lib/types";
 import { createEvent } from "@/lib/actions/event.actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +46,10 @@ export function EventForm() {
       startsAt: new Date(`${data.date}T${data.time}`).toISOString(),
       status: data.status,
       ...(data.capacity != null ? { capacity: data.capacity } : {}),
+      ...(data.venueName ? { venueName: data.venueName } : {}),
+      ...(data.category ? { category: data.category } : {}),
+      ...(data.lat != null ? { lat: data.lat } : {}),
+      ...(data.lng != null ? { lng: data.lng } : {}),
     };
 
     startTransition(() => {
@@ -139,6 +144,89 @@ export function EventForm() {
           {...register("location")}
         />
         {errors.location && <FieldError id="event-location-error">{errors.location.message}</FieldError>}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="event-venue" className="block text-sm font-medium text-neutral-700">
+            Venue <span className="font-normal text-neutral-500">(optional)</span>
+          </label>
+          <Input
+            id="event-venue"
+            type="text"
+            placeholder="e.g. Union Station"
+            className="mt-1"
+            autoComplete="off"
+            maxLength={120}
+            disabled={isPending}
+            aria-describedby={errors.venueName ? "event-venue-error" : undefined}
+            aria-invalid={!!errors.venueName}
+            {...register("venueName", { setValueAs: (v) => (v === "" ? undefined : v) })}
+          />
+          {errors.venueName && <FieldError id="event-venue-error">{errors.venueName.message}</FieldError>}
+        </div>
+        <div>
+          <label htmlFor="event-category" className="block text-sm font-medium text-neutral-700">
+            Category <span className="font-normal text-neutral-500">(optional)</span>
+          </label>
+          <select
+            id="event-category"
+            className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500"
+            disabled={isPending}
+            aria-describedby={errors.category ? "event-category-error" : undefined}
+            aria-invalid={!!errors.category}
+            {...register("category", { setValueAs: (v) => (v === "" ? undefined : v) })}
+          >
+            <option value="">No category</option>
+            {EVENT_CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {category.charAt(0).toUpperCase() + category.slice(1)}
+              </option>
+            ))}
+          </select>
+          {errors.category && <FieldError id="event-category-error">{errors.category.message}</FieldError>}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="event-lat" className="block text-sm font-medium text-neutral-700">
+            Latitude <span className="font-normal text-neutral-500">(optional, for map)</span>
+          </label>
+          <Input
+            id="event-lat"
+            type="number"
+            step="any"
+            min={-90}
+            max={90}
+            placeholder="e.g. 39.7392"
+            className="mt-1"
+            disabled={isPending}
+            aria-describedby={errors.lat ? "event-lat-error" : undefined}
+            aria-invalid={!!errors.lat}
+            {...register("lat", { setValueAs: (v) => (v === "" ? undefined : Number(v)) })}
+          />
+          {errors.lat && <FieldError id="event-lat-error">{errors.lat.message}</FieldError>}
+        </div>
+        <div>
+          <label htmlFor="event-lng" className="block text-sm font-medium text-neutral-700">
+            Longitude <span className="font-normal text-neutral-500">(optional, for map)</span>
+          </label>
+          <Input
+            id="event-lng"
+            type="number"
+            step="any"
+            min={-180}
+            max={180}
+            placeholder="e.g. -104.9903"
+            className="mt-1"
+            disabled={isPending}
+            aria-describedby={errors.lng ? "event-lng-error" : undefined}
+            aria-invalid={!!errors.lng}
+            {...register("lng", { setValueAs: (v) => (v === "" ? undefined : Number(v)) })}
+          />
+          {errors.lng && <FieldError id="event-lng-error">{errors.lng.message}</FieldError>}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

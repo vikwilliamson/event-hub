@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createEventFormSchema, type CreateEventFormData } from "@/lib/validations/event.schema";
+import { EVENT_CATEGORIES, type EventCategory } from "@/lib/types";
 import { updateEvent } from "@/lib/actions/event.actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,10 @@ interface EditEventFormProps {
   initialTime: string;
   initialStatus: "draft" | "published";
   initialCapacity: number | undefined;
+  initialVenueName: string | undefined;
+  initialCategory: EventCategory | undefined;
+  initialLat: number | undefined;
+  initialLng: number | undefined;
 }
 
 export function EditEventForm({
@@ -33,6 +38,10 @@ export function EditEventForm({
   initialTime,
   initialStatus,
   initialCapacity,
+  initialVenueName,
+  initialCategory,
+  initialLat,
+  initialLng,
 }: EditEventFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -53,6 +62,10 @@ export function EditEventForm({
       time: initialTime,
       status: initialStatus,
       capacity: initialCapacity,
+      venueName: initialVenueName,
+      category: initialCategory,
+      lat: initialLat,
+      lng: initialLng,
     },
   });
 
@@ -73,6 +86,10 @@ export function EditEventForm({
       startsAt: new Date(`${data.date}T${data.time}`).toISOString(),
       status: data.status,
       ...(data.capacity != null ? { capacity: data.capacity } : {}),
+      ...(data.venueName ? { venueName: data.venueName } : {}),
+      ...(data.category ? { category: data.category } : {}),
+      ...(data.lat != null ? { lat: data.lat } : {}),
+      ...(data.lng != null ? { lng: data.lng } : {}),
     };
 
     startTransition(() => {
@@ -175,6 +192,93 @@ export function EditEventForm({
         {errors.location && (
           <FieldError id="edit-event-location-error">{errors.location.message}</FieldError>
         )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="edit-event-venue" className="block text-sm font-medium text-neutral-700">
+            Venue <span className="font-normal text-neutral-500">(optional)</span>
+          </label>
+          <Input
+            id="edit-event-venue"
+            type="text"
+            placeholder="e.g. Union Station"
+            className="mt-1"
+            autoComplete="off"
+            maxLength={120}
+            disabled={isPending}
+            aria-describedby={errors.venueName ? "edit-event-venue-error" : undefined}
+            aria-invalid={!!errors.venueName}
+            {...register("venueName", { setValueAs: (v) => (v === "" ? undefined : v) })}
+          />
+          {errors.venueName && (
+            <FieldError id="edit-event-venue-error">{errors.venueName.message}</FieldError>
+          )}
+        </div>
+        <div>
+          <label htmlFor="edit-event-category" className="block text-sm font-medium text-neutral-700">
+            Category <span className="font-normal text-neutral-500">(optional)</span>
+          </label>
+          <select
+            id="edit-event-category"
+            className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500"
+            disabled={isPending}
+            aria-describedby={errors.category ? "edit-event-category-error" : undefined}
+            aria-invalid={!!errors.category}
+            {...register("category", { setValueAs: (v) => (v === "" ? undefined : v) })}
+          >
+            <option value="">No category</option>
+            {EVENT_CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {category.charAt(0).toUpperCase() + category.slice(1)}
+              </option>
+            ))}
+          </select>
+          {errors.category && (
+            <FieldError id="edit-event-category-error">{errors.category.message}</FieldError>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="edit-event-lat" className="block text-sm font-medium text-neutral-700">
+            Latitude <span className="font-normal text-neutral-500">(optional, for map)</span>
+          </label>
+          <Input
+            id="edit-event-lat"
+            type="number"
+            step="any"
+            min={-90}
+            max={90}
+            placeholder="e.g. 39.7392"
+            className="mt-1"
+            disabled={isPending}
+            aria-describedby={errors.lat ? "edit-event-lat-error" : undefined}
+            aria-invalid={!!errors.lat}
+            {...register("lat", { setValueAs: (v) => (v === "" ? undefined : Number(v)) })}
+          />
+          {errors.lat && <FieldError id="edit-event-lat-error">{errors.lat.message}</FieldError>}
+        </div>
+        <div>
+          <label htmlFor="edit-event-lng" className="block text-sm font-medium text-neutral-700">
+            Longitude <span className="font-normal text-neutral-500">(optional, for map)</span>
+          </label>
+          <Input
+            id="edit-event-lng"
+            type="number"
+            step="any"
+            min={-180}
+            max={180}
+            placeholder="e.g. -104.9903"
+            className="mt-1"
+            disabled={isPending}
+            aria-describedby={errors.lng ? "edit-event-lng-error" : undefined}
+            aria-invalid={!!errors.lng}
+            {...register("lng", { setValueAs: (v) => (v === "" ? undefined : Number(v)) })}
+          />
+          {errors.lng && <FieldError id="edit-event-lng-error">{errors.lng.message}</FieldError>}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

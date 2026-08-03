@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getSession } from "@/lib/firebase/auth.server";
-import { getEvent } from "@/lib/firebase/db";
+import { getDemoSession } from "@/lib/session";
+import { getOwnedEvent } from "@/lib/events-organizer";
 import { EditEventForm } from "@/components/event/edit-event-form";
 
 type Props = { params: Promise<{ id: string }> };
@@ -20,11 +20,11 @@ function toInputTime(date: Date): string {
 }
 
 export default async function EditEventPage({ params }: Props) {
-  const session = await getSession();
+  const session = await getDemoSession();
   if (!session) notFound();
 
   const { id } = await params;
-  const event = await getEvent(session.uid, id);
+  const event = await getOwnedEvent(session.uid, id);
   if (!event) notFound();
   if (event.status === "cancelled") {
     return (
@@ -61,6 +61,10 @@ export default async function EditEventPage({ params }: Props) {
         initialTime={toInputTime(event.startsAt)}
         initialStatus={event.status as "draft" | "published"}
         initialCapacity={event.capacity ?? undefined}
+        initialVenueName={event.venueName ?? undefined}
+        initialCategory={event.category ?? undefined}
+        initialLat={event.lat ?? undefined}
+        initialLng={event.lng ?? undefined}
       />
     </div>
   );
