@@ -57,6 +57,11 @@ Already built: Claude-generated RSVP confirmation email (`src/lib/email/ai-confi
 
 Decision: demo ships with AI-0 (existing email, key-gated). AI-1/AI-2 are stretch goals, only after all tests are green.
 
+**Built (2026-08-03):**
+- **AI-1 shipped** — `src/lib/ai/describe-event.ts` + `draftEventDescription` server action; "Draft with AI" button on the create form (title + existing description text as notes → drafted description fills the field). Key-gated: button renders only when `ANTHROPIC_API_KEY` is set.
+- **AI-2 shipped** — `src/lib/ai/nl-search.ts` + `nlSearch` server action; "Ask in plain English" box on `/events`. Claude (`claude-opus-4-8`, structured outputs) extracts `{text, category, city, radiusKm}`, which redirects to the same shareable `/events?q=&category=&near=&radius=` URLs the filter form produces — `searchEvents` stays the deterministic backend. Every failure mode (no key, timeout, refusal, malformed output, unknown city/category) falls back to a plain text search.
+- Tests: 11 new unit tests (`src/test/unit/ai.test.ts`) with a mocked SDK — extraction mapping, clamping, field-level dropping, and all fallback paths. Keyless degradation verified in the running app (both UI entry points hidden). *Live-API behavior not yet verified — needs `ANTHROPIC_API_KEY` in `.env.local`.*
+
 ## 6. Test plan (write first — red, then implement to green)
 
 Unit (`src/test/unit/`):

@@ -2,8 +2,10 @@ import { getAllPublishedEvents } from "@/lib/events-public";
 import { searchEvents, parseEventSearchParams, type RawSearchParams } from "@/lib/search";
 import { haversineKm } from "@/lib/geo";
 import type { Event } from "@/lib/types";
+import { env } from "@/lib/env";
 import { EventCard } from "@/components/event/event-card";
 import { EventSearchForm } from "@/components/event/event-search-form";
+import { NlSearchForm } from "@/components/event/nl-search-form";
 import { EventsMap } from "@/components/event/events-map";
 import Link from "next/link";
 
@@ -61,6 +63,8 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
           My RSVPs
         </Link>
       </div>
+
+      {env.ANTHROPIC_API_KEY && <NlSearchForm />}
 
       <EventSearchForm
         defaults={{

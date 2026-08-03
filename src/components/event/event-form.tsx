@@ -1,12 +1,13 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createEventFormSchema, type CreateEventFormData } from "@/lib/validations/event.schema";
 import { EVENT_CATEGORIES } from "@/lib/types";
 import { createEvent } from "@/lib/actions/event.actions";
+import { draftEventDescription } from "@/lib/actions/ai.actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,13 +15,21 @@ import { FieldError } from "@/components/ui/field-error";
 
 const FORM_ERROR_ID = "event-form-error";
 
-export function EventForm() {
+interface EventFormProps {
+  /** Server-checked ANTHROPIC_API_KEY presence; shows the AI draft button. */
+  aiEnabled?: boolean;
+}
+
+export function EventForm({ aiEnabled = false }: EventFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isDrafting, setIsDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
 
   const {
     register,
     handleSubmit,
+    getValues,
     setValue,
     setError,
     formState: { errors },
@@ -73,6 +82,32 @@ export function EventForm() {
     void handleSubmit(onSubmit)();
   }
 
+  async function draftWithAi() {
+    const title = getValues("title")?.trim();
+    if (!title) {
+      setDraftError("Add a title first, then draft a description.");
+      return;
+    }
+    setDraftError(null);
+    setIsDrafting(true);
+    try {
+      // Existing description text is treated as the organizer's rough notes.
+      const result = await draftEventDescription({
+        title,
+        notes: getValues("description"),
+      });
+      if (result.ok) {
+        setValue("description", result.description, { shouldValidate: true });
+      } else {
+        setDraftError(result.error);
+      }
+    } catch {
+      setDraftError("Drafting failed. Please try again or write it manually.");
+    } finally {
+      setIsDrafting(false);
+    }
+  }
+
   return (
     <form
       noValidate
@@ -110,9 +145,24 @@ export function EventForm() {
       </div>
 
       <div>
-        <label htmlFor="event-description" className="block text-sm font-medium text-neutral-700">
-          Description
-        </label>
+        <div className="flex items-center justify-between">
+          <label htmlFor="event-description" className="block text-sm font-medium text-neutral-700">
+            Description
+          </label>
+          {aiEnabled && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={isPending || isDrafting}
+              isLoading={isDrafting}
+              loadingLabel="Drafting description"
+              onClick={() => void draftWithAi()}
+            >
+              Draft with AI
+            </Button>
+          )}
+        </div>
         <Textarea
           id="event-description"
           placeholder="What's the event about?"
@@ -125,6 +175,11 @@ export function EventForm() {
           {...register("description")}
         />
         {errors.description && <FieldError id="event-description-error">{errors.description.message}</FieldError>}
+        {draftError && (
+          <p role="status" className="mt-1 text-sm text-amber-700">
+            {draftError}
+          </p>
+        )}
       </div>
 
       <div>

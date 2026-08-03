@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { env } from "@/lib/env";
 import { EventForm } from "@/components/event/event-form";
 
 /**
@@ -14,7 +15,7 @@ export default function NewEventPage() {
       </p>
 
       <div className="mt-6 max-w-2xl">
-        <EventForm />
+        <EventForm aiEnabled={Boolean(env.ANTHROPIC_API_KEY)} />
       </div>
 
       <p className="mt-6">
