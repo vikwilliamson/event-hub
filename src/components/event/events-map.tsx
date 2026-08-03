@@ -24,31 +24,35 @@ declare global {
 }
 
 const MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-const SCRIPT_ID = "google-maps-js";
+const READY_CALLBACK = "__eventhubMapsReady";
 
 type GoogleMaps = typeof google;
 
+// One promise per page load: the script's `load` event fires before the API
+// namespace is fully populated, so we rely on the documented `callback=`
+// param instead, and cache the promise so remounts don't race the script tag.
+let mapsPromise: Promise<GoogleMaps> | null = null;
+
 function loadGoogleMaps(apiKey: string): Promise<GoogleMaps> {
-  if (typeof window !== "undefined" && window.google?.maps) {
-    return Promise.resolve(window.google);
-  }
-  return new Promise((resolve, reject) => {
-    const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
-    const script = existing ?? document.createElement("script");
-    const onLoad = () =>
-      window.google
-        ? resolve(window.google)
-        : reject(new Error("Google Maps failed to load"));
-    const onError = () => reject(new Error("Google Maps failed to load"));
-    script.addEventListener("load", onLoad, { once: true });
-    script.addEventListener("error", onError, { once: true });
-    if (!existing) {
-      script.id = SCRIPT_ID;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&loading=async`;
+  if (!mapsPromise) {
+    mapsPromise = new Promise((resolve, reject) => {
+      if (typeof window.google?.maps?.importLibrary === "function") {
+        resolve(window.google);
+        return;
+      }
+      (window as unknown as Record<string, unknown>)[READY_CALLBACK] = () =>
+        resolve(window.google as GoogleMaps);
+      const script = document.createElement("script");
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&loading=async&callback=${READY_CALLBACK}`;
       script.async = true;
+      script.onerror = () => {
+        mapsPromise = null;
+        reject(new Error("Google Maps failed to load"));
+      };
       document.head.appendChild(script);
-    }
-  });
+    });
+  }
+  return mapsPromise;
 }
 
 /**
@@ -67,12 +71,18 @@ export function EventsMap({ events, center }: EventsMapProps) {
     const container = containerRef.current;
 
     loadGoogleMaps(MAPS_API_KEY)
-      .then((g) => {
+      .then(async (g) => {
+        // With loading=async, classes are only available via importLibrary.
+        const { Map } = (await g.maps.importLibrary("maps")) as google.maps.MapsLibrary;
+        const { AdvancedMarkerElement } = (await g.maps.importLibrary(
+          "marker"
+        )) as google.maps.MarkerLibrary;
         if (cancelled) return;
 
-        const map = new g.maps.Map(container, {
+        const map = new Map(container, {
           center: center ?? { lat: events[0].lat, lng: events[0].lng },
           zoom: center ? 10 : 4,
+          mapId: "DEMO_MAP_ID",
           mapTypeControl: false,
           streetViewControl: false,
         });
@@ -81,7 +91,7 @@ export function EventsMap({ events, center }: EventsMapProps) {
         for (const event of events) {
           const position = { lat: event.lat, lng: event.lng };
           bounds.extend(position);
-          const marker = new g.maps.Marker({ map, position, title: event.title });
+          const marker = new AdvancedMarkerElement({ map, position, title: event.title });
           marker.addListener("click", () => router.push(`/events/${event.id}`));
         }
 
@@ -89,8 +99,9 @@ export function EventsMap({ events, center }: EventsMapProps) {
           map.fitBounds(bounds, 48);
         }
       })
-      .catch(() => {
+      .catch((err) => {
         // Map is progressive enhancement; the event list still renders.
+        console.warn("EventsMap failed to initialize:", err);
       });
 
     return () => {
