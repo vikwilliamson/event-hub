@@ -1,105 +1,78 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { getAdminFirestore } from "@/lib/firebase/admin";
-import { createEvent as createEventAction } from "@/lib/actions/event.actions";
-import { seedTestDatabase, cleanupTestDatabase } from "../factories/test-data.factory";
+import { describe, it, expect, beforeEach } from "vitest";
+import { vi } from "vitest";
 
-vi.mock("@/lib/firebase/auth.server", () => ({
-  getSession: vi.fn(),
+const cookieState = vi.hoisted(() => ({ uid: null as string | null }));
+
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) =>
+      name === "eh_uid" && cookieState.uid ? { value: cookieState.uid } : undefined,
+  }),
 }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-describe("Create Event Flow", () => {
-  let db: ReturnType<typeof getAdminFirestore>;
-  let testOrganizerId: string;
+import { createEvent } from "@/lib/actions/event.actions";
+import { MemoryStore, setStore, getStore } from "@/lib/store";
+import { makeEventPayload } from "../factories/factories";
 
-  beforeEach(async () => {
-    const setup = await seedTestDatabase();
-    db = getAdminFirestore();
-    testOrganizerId = setup.organizerId;
+describe("createEvent action", () => {
+  beforeEach(() => {
+    setStore(new MemoryStore());
+    cookieState.uid = "organizer-1";
   });
 
-  afterEach(async () => {
-    await cleanupTestDatabase(testOrganizerId);
-    vi.clearAllMocks();
+  it("creates a published event owned by the session user", async () => {
+    const result = await createEvent(makeEventPayload({ status: "published" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const stored = await getStore().read((d) => d.events[result.data.eventId]);
+    expect(stored).toBeDefined();
+    expect(stored.organizerId).toBe("organizer-1");
+    expect(stored.status).toBe("published");
+    expect(stored.publishedAt).toBeInstanceOf(Date);
+    expect(stored.rsvpCount).toBe(0);
   });
 
-  async function mockSession(uid = testOrganizerId) {
-    const { getSession } = await import("@/lib/firebase/auth.server");
-    vi.mocked(getSession).mockResolvedValue({ uid, email: "test@example.com" });
-  }
-
-  const validPayload = () => ({
-    title: "Test Event",
-    description: "A test event",
-    location: "Test Location",
-    startsAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    status: "published" as const,
+  it("creates a draft without publishedAt", async () => {
+    const result = await createEvent(makeEventPayload({ status: "draft" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const stored = await getStore().read((d) => d.events[result.data.eventId]);
+    expect(stored.status).toBe("draft");
+    expect(stored.publishedAt).toBeNull();
   });
 
-  describe("Validation", () => {
-    it("should accept valid payload", async () => {
-      await mockSession();
-      const result = await createEventAction(validPayload());
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(typeof result.data.eventId).toBe("string");
-      }
-    });
-
-    it("should reject empty title", async () => {
-      await mockSession();
-      const result = await createEventAction({ ...validPayload(), title: "" });
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.fieldErrors).toBeDefined();
-      }
-    });
-
-    it("should reject invalid date", async () => {
-      await mockSession();
-      const result = await createEventAction({ ...validPayload(), startsAt: "not-a-date" });
-      expect(result.ok).toBe(false);
-    });
+  it("stores venue, category, and coordinates when provided", async () => {
+    const result = await createEvent(
+      makeEventPayload({
+        venueName: "Union Station",
+        category: "tech",
+        lat: 39.7392,
+        lng: -104.9903,
+      })
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const stored = await getStore().read((d) => d.events[result.data.eventId]);
+    expect(stored.venueName).toBe("Union Station");
+    expect(stored.category).toBe("tech");
+    expect(stored.lat).toBeCloseTo(39.7392);
+    expect(stored.lng).toBeCloseTo(-104.9903);
   });
 
-  describe("Integration", () => {
-    it("should persist event to Firestore", async () => {
-      await mockSession();
-      const payload = { ...validPayload(), title: "Integration Test Event" };
-      const result = await createEventAction(payload);
-      expect(result.ok).toBe(true);
+  it("returns field errors for an invalid payload", async () => {
+    const result = await createEvent(makeEventPayload({ title: "" }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.fieldErrors?.title).toBeDefined();
+  });
 
-      if (result.ok) {
-        const snap = await db
-          .collection("organizers")
-          .doc(testOrganizerId)
-          .collection("events")
-          .doc(result.data.eventId)
-          .get();
-
-        expect(snap.exists).toBe(true);
-        expect(snap.data()?.title).toBe(payload.title);
-        expect(snap.data()?.rsvpCount).toBe(0);
-        expect(snap.data()?.status).toBe("published");
-      }
-    });
-
-    it("should increment the event collection count", async () => {
-      await mockSession();
-      const before = await db
-        .collection("organizers")
-        .doc(testOrganizerId)
-        .collection("events")
-        .get();
-
-      await createEventAction(validPayload());
-
-      const after = await db
-        .collection("organizers")
-        .doc(testOrganizerId)
-        .collection("events")
-        .get();
-
-      expect(after.docs.length).toBe(before.docs.length + 1);
-    });
+  it("rejects when there is no session identity", async () => {
+    cookieState.uid = null;
+    const result = await createEvent(makeEventPayload());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/session|identity|auth/i);
   });
 });

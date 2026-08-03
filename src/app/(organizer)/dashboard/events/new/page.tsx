@@ -1,17 +1,11 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/firebase/auth.server";
 import { EventForm } from "@/components/event/event-form";
 
 /**
- * Create event page. Organizer-only; session required (middleware + server guard).
+ * Create event page. Every visitor has a demo identity, so anyone can
+ * organize events — no session guard needed.
  */
-export default async function NewEventPage() {
-  const session = await getSession();
-  if (!session) {
-    redirect("/login");
-  }
-
+export default function NewEventPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-neutral-900">Create event</h1>

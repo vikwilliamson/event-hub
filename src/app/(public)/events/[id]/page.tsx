@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import { findEventById } from "@/lib/firebase/public-db";
+import { findEventById } from "@/lib/events-public";
+import { getUserRsvpStatus } from "@/lib/actions/rsvp.actions";
 import { RsvpButton } from "@/components/event/rsvp-button";
-import type { Event } from "@/lib/firebase/types";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -13,6 +13,8 @@ export default async function EventPage({ params }: Props) {
   if (!result) notFound();
 
   const { event, organizerId } = result;
+  const rsvpStatus = await getUserRsvpStatus(event.id, organizerId);
+  const initialIsRsvped = rsvpStatus.ok && rsvpStatus.data.isRsvped;
 
   const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat("en-US", {
@@ -69,8 +71,16 @@ export default async function EventPage({ params }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-            {event.location}
+            {event.venueName ? `${event.venueName} · ${event.location}` : event.location}
           </div>
+
+          {event.category && (
+            <div className="flex items-center">
+              <span className="inline-flex items-center rounded-full bg-neutral-100 px-3 py-0.5 text-xs font-medium capitalize text-neutral-700">
+                {event.category}
+              </span>
+            </div>
+          )}
 
           <div className="flex items-center" aria-live="polite" aria-atomic="true">
             <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -86,6 +96,7 @@ export default async function EventPage({ params }: Props) {
             <RsvpButton
               eventId={event.id}
               organizerId={organizerId}
+              initialIsRsvped={initialIsRsvped}
               variant="primary"
               size="lg"
             />

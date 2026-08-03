@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { signOut } from "@/lib/actions/auth.actions";
 
 /**
- * Organizer dashboard nav: Dashboard + Sign out. Used in (organizer) layout.
- * Sign out is a form so it works without JS (progressive enhancement).
+ * Organizer dashboard nav. No sign-out — the demo identity is a browser
+ * cookie, not an account.
  */
 export function OrganizerTopbar() {
   return (
@@ -26,24 +25,16 @@ export function OrganizerTopbar() {
               </Link>
             </li>
             <li>
-              <SignOutButton />
+              <Link
+                href="/events"
+                className="text-neutral-700 hover:text-neutral-900 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 rounded"
+              >
+                Browse Events
+              </Link>
             </li>
           </ul>
         </nav>
       </div>
     </header>
-  );
-}
-
-function SignOutButton() {
-  return (
-    <form action={signOut} className="inline">
-      <button
-        type="submit"
-        className="text-neutral-700 hover:text-neutral-900 focus-visible:outline focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2 rounded"
-      >
-        Sign out
-      </button>
-    </form>
   );
 }

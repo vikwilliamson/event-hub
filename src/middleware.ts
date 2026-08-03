@@ -1,21 +1,28 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "session";
+const DEMO_UID_COOKIE = "eh_uid";
+const ONE_YEAR = 365 * 24 * 60 * 60;
 
+/**
+ * Demo identity: every visitor gets a stable anonymous uid cookie on first
+ * request. No login, no route guards — the uid scopes "my events" and
+ * "my RSVPs" per browser.
+ */
 export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const response = NextResponse.next();
 
-  if (pathname.startsWith("/dashboard")) {
-    const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME);
-    if (!sessionCookie) {
-      const loginUrl = new URL("/login", request.url);
-      loginUrl.searchParams.set("next", pathname);
-      return NextResponse.redirect(loginUrl);
-    }
+  if (!request.cookies.get(DEMO_UID_COOKIE)) {
+    response.cookies.set(DEMO_UID_COOKIE, crypto.randomUUID(), {
+      maxAge: ONE_YEAR,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    });
   }
 
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {

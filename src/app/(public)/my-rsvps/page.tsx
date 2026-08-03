@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getMyRsvps } from "@/lib/actions/rsvp.actions";
-import type { Rsvp } from "@/lib/firebase/types";
+import type { Rsvp } from "@/lib/types";
 
 function formatDate(date: Date): string {
   return new Date(date).toLocaleDateString("en-US", {

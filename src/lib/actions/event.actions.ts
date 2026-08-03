@@ -1,16 +1,15 @@
 "use server";
 
-import { redirect } from "next/navigation";
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { getAdminFirestore, getAdminAuth } from "@/lib/firebase/admin";
-import { eventConverter } from "@/lib/firebase/converters";
-import { getSession } from "@/lib/firebase/auth.server";
-import { getEvent, getEventRef } from "@/lib/firebase/db";
-import { getEventRsvps } from "@/lib/firebase/rsvp-db";
-import type { Event, EventStatus } from "@/lib/firebase/types";
+import { getStore } from "@/lib/store";
+import { getDemoSession, getOrCreateSessionUser } from "@/lib/session";
+import type { Event, EventStatus } from "@/lib/types";
 import { normalizeError } from "@/lib/utils/errors";
 import { validateCreateEventPayload } from "@/lib/validations/event.schema";
-import { sendEventCancellationEmail } from "@/lib/email";
+
+const NO_SESSION_ERROR =
+  "No demo identity found. Refresh the page and try again.";
 
 export type CreateEventResult =
   | { ok: true; data: { eventId: string } }
@@ -24,32 +23,22 @@ export type GetEventsResult =
   | { ok: true; data: Event[] }
   | { ok: false; error: string };
 
-export type CancelEventResult =
-  | { ok: true }
-  | { ok: false; error: string };
+export type CancelEventResult = { ok: true } | { ok: false; error: string };
 
 export type ToggleEventStatusResult =
   | { ok: true; data: { status: EventStatus } }
   | { ok: false; error: string };
 
 export async function getOrganizerEvents(): Promise<GetEventsResult> {
-  const session = await getSession();
-  if (!session) {
-    redirect("/login");
-  }
+  const session = await getDemoSession();
+  if (!session) return { ok: false, error: NO_SESSION_ERROR };
 
   try {
-    const db = getAdminFirestore();
-    const eventsSnapshot = await db
-      .collection("organizers")
-      .doc(session.uid)
-      .collection("events")
-      .withConverter(eventConverter)
-      .get();
-
-    const events = eventsSnapshot.docs.map((doc) => doc.data());
-    events.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
+    const events = await getStore().read((data) =>
+      Object.values(data.events)
+        .filter((event) => event.organizerId === session.uid)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    );
     return { ok: true, data: events };
   } catch (err) {
     return { ok: false, error: normalizeError(err).message };
@@ -57,10 +46,8 @@ export async function getOrganizerEvents(): Promise<GetEventsResult> {
 }
 
 export async function createEvent(raw: unknown): Promise<CreateEventResult> {
-  const session = await getSession();
-  if (!session) {
-    return { ok: false, error: "Authentication required." };
-  }
+  const user = await getOrCreateSessionUser();
+  if (!user) return { ok: false, error: NO_SESSION_ERROR };
 
   try {
     const parsed = validateCreateEventPayload(raw);
@@ -68,22 +55,18 @@ export async function createEvent(raw: unknown): Promise<CreateEventResult> {
       return { ok: false, error: parsed.error, fieldErrors: parsed.fieldErrors };
     }
 
-    const db = getAdminFirestore();
-    const eventsRef = db
-      .collection("organizers")
-      .doc(session.uid)
-      .collection("events")
-      .withConverter(eventConverter);
-
-    const docRef = eventsRef.doc();
     const now = new Date();
     const event: Event = {
-      id: docRef.id,
-      organizerId: session.uid,
-      organizerName: session.email ?? session.uid,
+      id: randomUUID(),
+      organizerId: user.id,
+      organizerName: user.displayName,
       title: parsed.data.title,
       description: parsed.data.description,
       location: parsed.data.location,
+      venueName: parsed.data.venueName || null,
+      lat: parsed.data.lat ?? null,
+      lng: parsed.data.lng ?? null,
+      category: parsed.data.category ?? null,
       startsAt: new Date(parsed.data.startsAt),
       endsAt: null,
       capacity: parsed.data.capacity ?? null,
@@ -95,9 +78,13 @@ export async function createEvent(raw: unknown): Promise<CreateEventResult> {
       publishedAt: parsed.data.status === "published" ? now : null,
     };
 
-    await docRef.set(event);
+    await getStore().mutate((data) => {
+      data.events[event.id] = event;
+    });
+
     revalidatePath("/dashboard");
-    return { ok: true, data: { eventId: docRef.id } };
+    revalidatePath("/events");
+    return { ok: true, data: { eventId: event.id } };
   } catch (err) {
     return { ok: false, error: normalizeError(err).message };
   }
@@ -107,10 +94,8 @@ export async function updateEvent(
   eventId: string,
   raw: unknown
 ): Promise<UpdateEventResult> {
-  const session = await getSession();
-  if (!session) {
-    return { ok: false, error: "Authentication required." };
-  }
+  const session = await getDemoSession();
+  if (!session) return { ok: false, error: NO_SESSION_ERROR };
 
   try {
     const parsed = validateCreateEventPayload(raw);
@@ -118,92 +103,73 @@ export async function updateEvent(
       return { ok: false, error: parsed.error, fieldErrors: parsed.fieldErrors };
     }
 
-    const existing = await getEvent(session.uid, eventId);
-    if (!existing) return { ok: false, error: "Event not found." };
-    if (existing.status === "cancelled") {
-      return { ok: false, error: "Cannot edit a cancelled event." };
+    const result = await getStore().mutate((data): UpdateEventResult => {
+      const existing = data.events[eventId];
+      if (!existing || existing.organizerId !== session.uid) {
+        return { ok: false, error: "Event not found." };
+      }
+      if (existing.status === "cancelled") {
+        return { ok: false, error: "Cannot edit a cancelled event." };
+      }
+
+      const now = new Date();
+      existing.title = parsed.data.title;
+      existing.description = parsed.data.description;
+      existing.location = parsed.data.location;
+      existing.venueName = parsed.data.venueName || null;
+      existing.lat = parsed.data.lat ?? null;
+      existing.lng = parsed.data.lng ?? null;
+      existing.category = parsed.data.category ?? null;
+      existing.startsAt = new Date(parsed.data.startsAt);
+      existing.status = parsed.data.status;
+      existing.capacity = parsed.data.capacity ?? null;
+      existing.updatedAt = now;
+      if (parsed.data.status === "published" && !existing.publishedAt) {
+        existing.publishedAt = now;
+      }
+      return { ok: true, data: { eventId } };
+    });
+
+    if (result.ok) {
+      revalidatePath(`/dashboard/events/${eventId}`);
+      revalidatePath("/dashboard");
+      revalidatePath("/events");
+      revalidatePath(`/events/${eventId}`);
     }
-
-    const now = new Date();
-    const updates: Partial<Event> & Record<string, unknown> = {
-      title: parsed.data.title,
-      description: parsed.data.description,
-      location: parsed.data.location,
-      startsAt: new Date(parsed.data.startsAt),
-      status: parsed.data.status,
-      capacity: parsed.data.capacity ?? null,
-      endsAt: null,
-      updatedAt: now,
-    };
-
-    if (parsed.data.status === "published" && !existing.publishedAt) {
-      updates.publishedAt = now;
-    }
-
-    await getEventRef(session.uid, eventId).update(updates);
-    revalidatePath(`/dashboard/events/${eventId}`);
-    revalidatePath("/dashboard");
-    return { ok: true, data: { eventId } };
+    return result;
   } catch (err) {
     return { ok: false, error: normalizeError(err).message };
   }
 }
 
 export async function cancelEvent(eventId: string): Promise<CancelEventResult> {
-  const session = await getSession();
-  if (!session) {
-    return { ok: false, error: "Authentication required." };
-  }
+  const session = await getDemoSession();
+  if (!session) return { ok: false, error: NO_SESSION_ERROR };
 
   try {
-    const existing = await getEvent(session.uid, eventId);
-    if (!existing) return { ok: false, error: "Event not found." };
-    if (existing.status === "cancelled") {
-      return { ok: false, error: "Event is already cancelled." };
-    }
+    const result = await getStore().mutate((data): CancelEventResult => {
+      const existing = data.events[eventId];
+      if (!existing || existing.organizerId !== session.uid) {
+        return { ok: false, error: "Event not found." };
+      }
+      if (existing.status === "cancelled") {
+        return { ok: false, error: "Event is already cancelled." };
+      }
 
-    const now = new Date();
-    await getEventRef(session.uid, eventId).update({
-      status: "cancelled",
-      cancelledAt: now,
-      updatedAt: now,
+      const now = new Date();
+      existing.status = "cancelled";
+      existing.cancelledAt = now;
+      existing.updatedAt = now;
+      return { ok: true };
     });
 
-    // Fire-and-forget cancellation emails to all confirmed attendees
-    const cancelledEvent = existing;
-    void (async () => {
-      try {
-        const rsvps = await getEventRsvps(session.uid, eventId);
-        if (rsvps.length === 0) return;
-
-        const identifiers = rsvps.map((r) => ({ uid: r.userId }));
-        const authResult = await getAdminAuth().getUsers(identifiers);
-        const userMap = new Map(authResult.users.map((u) => [u.uid, u]));
-
-        await Promise.allSettled(
-          rsvps.map((rsvp) => {
-            const authUser = userMap.get(rsvp.userId);
-            if (!authUser?.email) return Promise.resolve();
-            const displayName =
-              authUser.displayName ?? authUser.email.split("@")[0] ?? "there";
-            return sendEventCancellationEmail({
-              to: authUser.email,
-              displayName,
-              event: cancelledEvent,
-            });
-          })
-        );
-      } catch (err) {
-        console.warn(
-          "[email] event cancellation emails failed:",
-          err instanceof Error ? err.message : String(err)
-        );
-      }
-    })();
-
-    revalidatePath(`/dashboard/events/${eventId}`);
-    revalidatePath("/dashboard");
-    return { ok: true };
+    if (result.ok) {
+      revalidatePath(`/dashboard/events/${eventId}`);
+      revalidatePath("/dashboard");
+      revalidatePath("/events");
+      revalidatePath(`/events/${eventId}`);
+    }
+    return result;
   } catch (err) {
     return { ok: false, error: normalizeError(err).message };
   }
@@ -212,31 +178,37 @@ export async function cancelEvent(eventId: string): Promise<CancelEventResult> {
 export async function toggleEventStatus(
   eventId: string
 ): Promise<ToggleEventStatusResult> {
-  const session = await getSession();
-  if (!session) {
-    return { ok: false, error: "Authentication required." };
-  }
+  const session = await getDemoSession();
+  if (!session) return { ok: false, error: NO_SESSION_ERROR };
 
   try {
-    const existing = await getEvent(session.uid, eventId);
-    if (!existing) return { ok: false, error: "Event not found." };
-    if (existing.status === "cancelled") {
-      return { ok: false, error: "Cannot toggle status of a cancelled event." };
+    const result = await getStore().mutate((data): ToggleEventStatusResult => {
+      const existing = data.events[eventId];
+      if (!existing || existing.organizerId !== session.uid) {
+        return { ok: false, error: "Event not found." };
+      }
+      if (existing.status === "cancelled") {
+        return { ok: false, error: "Cannot toggle status of a cancelled event." };
+      }
+
+      const newStatus: EventStatus =
+        existing.status === "published" ? "draft" : "published";
+      const now = new Date();
+      existing.status = newStatus;
+      existing.updatedAt = now;
+      if (newStatus === "published" && !existing.publishedAt) {
+        existing.publishedAt = now;
+      }
+      return { ok: true, data: { status: newStatus } };
+    });
+
+    if (result.ok) {
+      revalidatePath(`/dashboard/events/${eventId}`);
+      revalidatePath("/dashboard");
+      revalidatePath("/events");
+      revalidatePath(`/events/${eventId}`);
     }
-
-    const newStatus: EventStatus =
-      existing.status === "published" ? "draft" : "published";
-    const now = new Date();
-    const updates: Record<string, unknown> = { status: newStatus, updatedAt: now };
-
-    if (newStatus === "published" && !existing.publishedAt) {
-      updates.publishedAt = now;
-    }
-
-    await getEventRef(session.uid, eventId).update(updates);
-    revalidatePath(`/dashboard/events/${eventId}`);
-    revalidatePath("/dashboard");
-    return { ok: true, data: { status: newStatus } };
+    return result;
   } catch (err) {
     return { ok: false, error: normalizeError(err).message };
   }

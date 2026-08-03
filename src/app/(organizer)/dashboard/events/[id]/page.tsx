@@ -1,21 +1,21 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { getSession } from "@/lib/firebase/auth.server";
-import { getEvent } from "@/lib/firebase/db";
+import { getDemoSession } from "@/lib/session";
+import { getOwnedEvent } from "@/lib/events-organizer";
 import { cancelEvent, toggleEventStatus } from "@/lib/actions/event.actions";
 import { Button } from "@/components/ui/button";
 
 type Props = { params: Promise<{ id: string }> };
 
 export default async function OrganizerEventPage({ params }: Props) {
-  const session = await getSession();
+  const session = await getDemoSession();
   if (!session) {
     notFound();
   }
 
   const { id } = await params;
-  const event = await getEvent(session.uid, id);
+  const event = await getOwnedEvent(session.uid, id);
   if (!event) {
     notFound();
   }

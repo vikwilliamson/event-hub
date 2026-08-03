@@ -1,13 +1,13 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getSession } from "@/lib/firebase/auth.server";
+import { getDemoSession } from "@/lib/session";
 import { getEventAttendees } from "@/lib/actions/rsvp.actions";
 import { AttendeeTable } from "@/components/attendee/attendee-table";
 
 type Props = { params: Promise<{ id: string }> };
 
 export default async function AttendeesPage({ params }: Props) {
-  const session = await getSession();
+  const session = await getDemoSession();
   if (!session) notFound();
 
   const { id } = await params;

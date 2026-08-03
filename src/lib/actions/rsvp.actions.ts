@@ -1,15 +1,17 @@
 "use server";
 
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/firebase/auth.server";
-import { getAdminAuth } from "@/lib/firebase/admin";
-import { getRsvpRef, getUserRsvp, getUserRsvps, getEventRsvps } from "@/lib/firebase/rsvp-db";
-import { getEvent, getEventRef } from "@/lib/firebase/db";
-import type { Event, Rsvp } from "@/lib/firebase/types";
+import { getStore } from "@/lib/store";
+import {
+  getDemoSession,
+  getOrCreateSessionUser,
+  displayNameForUid,
+} from "@/lib/session";
+import type { Rsvp } from "@/lib/types";
 import { normalizeError } from "@/lib/utils/errors";
-import { FieldValue } from "firebase-admin/firestore";
-import { env } from "@/lib/env";
-import { sendRsvpConfirmationEmail } from "@/lib/email";
+import { revalidatePath } from "next/cache";
+
+const NO_SESSION_ERROR =
+  "No demo identity found. Refresh the page and try again.";
 
 export type RsvpResult =
   | { ok: true; data: { rsvp: Rsvp } }
@@ -31,218 +33,162 @@ export type GetEventAttendeesResult =
   | { ok: false; error: string };
 
 /**
- * RSVP to an event. Uses transaction to prevent race conditions.
- * Updates event rsvpCount atomically.
+ * RSVP to an event. Runs inside a store mutation, so the duplicate check,
+ * capacity check, and count increment are atomic.
  */
-export async function rsvpEvent(eventId: string, organizerId: string): Promise<RsvpResult> {
-  const session = await getSession();
-  if (!session) {
-    redirect("/login");
-  }
-
-  const userId = session.uid;
-
-  let capturedEvent: Event | null = null;
+export async function rsvpEvent(
+  eventId: string,
+  _organizerId?: string
+): Promise<RsvpResult> {
+  const user = await getOrCreateSessionUser();
+  if (!user) return { ok: false, error: NO_SESSION_ERROR };
 
   try {
-    const db = getRsvpRef(organizerId, eventId, userId).firestore;
-
-    await db.runTransaction(async (transaction) => {
-      const existingRsvpSnap = await transaction.get(getRsvpRef(organizerId, eventId, userId));
-      if (existingRsvpSnap.exists && !existingRsvpSnap.data()!.cancelledAt) {
-        throw new Error("You have already RSVP'd to this event");
+    const result = await getStore().mutate((data): RsvpResult => {
+      const event = data.events[eventId];
+      if (!event) return { ok: false, error: "Event not found" };
+      if (event.status !== "published") {
+        return { ok: false, error: "This event is not open for RSVPs" };
       }
 
-      const eventSnap = await transaction.get(getEventRef(organizerId, eventId));
-      if (!eventSnap.exists) {
-        throw new Error("Event not found");
+      const rsvpId = `${eventId}_${user.id}`;
+      const existing = data.rsvps[rsvpId];
+      if (existing && !existing.cancelledAt) {
+        return { ok: false, error: "You have already RSVP'd to this event" };
       }
-      const event = eventSnap.data()!;
-      capturedEvent = event;
+      if (event.capacity !== null && event.rsvpCount >= event.capacity) {
+        return { ok: false, error: "This event is at capacity" };
+      }
 
+      const now = new Date();
       const rsvp: Rsvp = {
-        id: userId,
+        id: rsvpId,
         eventId,
-        userId,
-        organizerId,
+        userId: user.id,
+        organizerId: event.organizerId,
         eventSnapshot: {
           title: event.title,
           startsAt: event.startsAt,
           location: event.location,
         },
-        createdAt: new Date(),
+        createdAt: now,
         cancelledAt: null,
       };
-
-      transaction.set(getRsvpRef(organizerId, eventId, userId), rsvp);
-      transaction.update(getEventRef(organizerId, eventId), {
-        rsvpCount: FieldValue.increment(1),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+      data.rsvps[rsvpId] = rsvp;
+      event.rsvpCount += 1;
+      event.updatedAt = now;
+      return { ok: true, data: { rsvp } };
     });
 
-    const createdRsvp = await getUserRsvp(organizerId, eventId, userId);
-
-    // Fire-and-forget confirmation email — never blocks the RSVP response
-    if (capturedEvent && session.email) {
-      const event = capturedEvent;
-      const to = session.email;
-      void (async () => {
-        try {
-          const authUser = await getAdminAuth().getUser(userId);
-          const displayName =
-            authUser.displayName ?? authUser.email?.split("@")[0] ?? "there";
-          await sendRsvpConfirmationEmail({
-            to,
-            displayName,
-            event,
-            appUrl: env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-          });
-        } catch (err) {
-          console.warn(
-            "[email] rsvp confirmation failed:",
-            err instanceof Error ? err.message : String(err)
-          );
-        }
-      })();
-    }
-
-    return { ok: true, data: { rsvp: createdRsvp! } };
-  } catch (err) {
-    return {
-      ok: false,
-      error: normalizeError(err).message,
-    };
-  }
-}
-
-/**
- * Cancel an RSVP. Sets cancelledAt timestamp and updates event rsvpCount.
- */
-export async function cancelRsvp(eventId: string, organizerId: string): Promise<RsvpResult> {
-  const session = await getSession();
-  if (!session) {
-    redirect("/login");
-  }
-
-  const userId = session.uid;
-
-  try {
-    // Check if RSVP exists and is not cancelled
-    const existingRsvp = await getUserRsvp(organizerId, eventId, userId);
-    if (!existingRsvp) {
-      return { ok: false, error: "No RSVP found for this event" };
-    }
-
-    const db = getRsvpRef(organizerId, eventId, userId).firestore;
-    
-    // Use transaction to ensure atomicity
-    await db.runTransaction(async (transaction) => {
-      const eventSnap = await transaction.get(getEventRef(organizerId, eventId));
-      if (!eventSnap.exists) {
-        throw new Error("Event not found");
-      }
-
-      transaction.update(getRsvpRef(organizerId, eventId, userId), {
-        cancelledAt: FieldValue.serverTimestamp(),
-      });
-
-      transaction.update(getEventRef(organizerId, eventId), {
-        rsvpCount: FieldValue.increment(-1),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-    });
-
-    // Return updated RSVP
-    const cancelledRsvp = { ...existingRsvp, cancelledAt: new Date() };
-    return { ok: true, data: { rsvp: cancelledRsvp } };
-  } catch (err) {
-    return {
-      ok: false,
-      error: normalizeError(err).message,
-    };
-  }
-}
-
-/**
- * Get all RSVPs for the current user.
- */
-export async function getMyRsvps(): Promise<GetMyRsvpsResult> {
-  const session = await getSession();
-  if (!session) {
-    redirect("/login");
-  }
-
-  try {
-    const rsvps = await getUserRsvps(session.uid);
-    return { ok: true, data: { rsvps } };
-  } catch (err) {
-    return {
-      ok: false,
-      error: normalizeError(err).message,
-    };
-  }
-}
-
-/**
- * Get confirmed attendees for an event. Organizer-only.
- * Merges RSVP records with Firebase Auth user info (email, displayName).
- */
-export async function getEventAttendees(
-  eventId: string
-): Promise<GetEventAttendeesResult> {
-  const session = await getSession();
-  if (!session) {
-    redirect("/login");
-  }
-
-  try {
-    const event = await getEvent(session.uid, eventId);
-    if (!event) return { ok: false, error: "Event not found." };
-
-    const rsvps = await getEventRsvps(session.uid, eventId);
-    if (rsvps.length === 0) {
-      return {
-        ok: true,
-        data: { attendees: [], eventTitle: event.title },
-      };
-    }
-
-    const identifiers = rsvps.map((r) => ({ uid: r.userId }));
-    const authResult = await getAdminAuth().getUsers(identifiers);
-    const userMap = new Map(authResult.users.map((u) => [u.uid, u]));
-
-    const attendees: AttendeeInfo[] = rsvps
-      .map((r) => ({
-        userId: r.userId,
-        email: userMap.get(r.userId)?.email ?? null,
-        displayName: userMap.get(r.userId)?.displayName ?? null,
-        rsvpDate: r.createdAt,
-      }))
-      .sort((a, b) => a.rsvpDate.getTime() - b.rsvpDate.getTime());
-
-    return { ok: true, data: { attendees, eventTitle: event.title } };
+    if (result.ok) revalidatePath(`/events/${eventId}`);
+    return result;
   } catch (err) {
     return { ok: false, error: normalizeError(err).message };
   }
 }
 
 /**
- * Check if current user has RSVP'd to a specific event.
+ * Cancel an RSVP. The already-cancelled check and count decrement happen in
+ * the same mutation, so a double cancel can never decrement twice.
  */
-export async function getUserRsvpStatus(eventId: string, organizerId: string): Promise<{ ok: true; data: { isRsvped: boolean } } | { ok: false; error: string }> {
-  const session = await getSession();
-  if (!session) {
-    return { ok: true, data: { isRsvped: false } };
-  }
+export async function cancelRsvp(
+  eventId: string,
+  _organizerId?: string
+): Promise<RsvpResult> {
+  const session = await getDemoSession();
+  if (!session) return { ok: false, error: NO_SESSION_ERROR };
 
   try {
-    const rsvp = await getUserRsvp(organizerId, eventId, session.uid);
-    return { ok: true, data: { isRsvped: !!rsvp } };
+    const result = await getStore().mutate((data): RsvpResult => {
+      const rsvpId = `${eventId}_${session.uid}`;
+      const rsvp = data.rsvps[rsvpId];
+      if (!rsvp) return { ok: false, error: "No RSVP found for this event" };
+      if (rsvp.cancelledAt) {
+        return { ok: false, error: "This RSVP is already cancelled" };
+      }
+
+      const now = new Date();
+      rsvp.cancelledAt = now;
+
+      const event = data.events[eventId];
+      if (event) {
+        event.rsvpCount = Math.max(0, event.rsvpCount - 1);
+        event.updatedAt = now;
+      }
+      return { ok: true, data: { rsvp } };
+    });
+
+    if (result.ok) revalidatePath(`/events/${eventId}`);
+    return result;
   } catch (err) {
-    return {
-      ok: false,
-      error: normalizeError(err).message,
-    };
+    return { ok: false, error: normalizeError(err).message };
+  }
+}
+
+/** All RSVPs for the current user, newest first (cancelled included). */
+export async function getMyRsvps(): Promise<GetMyRsvpsResult> {
+  const session = await getDemoSession();
+  if (!session) return { ok: false, error: NO_SESSION_ERROR };
+
+  try {
+    const rsvps = await getStore().read((data) =>
+      Object.values(data.rsvps)
+        .filter((rsvp) => rsvp.userId === session.uid)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    );
+    return { ok: true, data: { rsvps } };
+  } catch (err) {
+    return { ok: false, error: normalizeError(err).message };
+  }
+}
+
+/** Confirmed attendees for an event the current user organizes. */
+export async function getEventAttendees(
+  eventId: string
+): Promise<GetEventAttendeesResult> {
+  const session = await getDemoSession();
+  if (!session) return { ok: false, error: NO_SESSION_ERROR };
+
+  try {
+    return await getStore().read((data): GetEventAttendeesResult => {
+      const event = data.events[eventId];
+      if (!event || event.organizerId !== session.uid) {
+        return { ok: false, error: "Event not found." };
+      }
+
+      const attendees: AttendeeInfo[] = Object.values(data.rsvps)
+        .filter((rsvp) => rsvp.eventId === eventId && !rsvp.cancelledAt)
+        .map((rsvp) => ({
+          userId: rsvp.userId,
+          email: null,
+          displayName:
+            data.users[rsvp.userId]?.displayName ?? displayNameForUid(rsvp.userId),
+          rsvpDate: rsvp.createdAt,
+        }))
+        .sort((a, b) => a.rsvpDate.getTime() - b.rsvpDate.getTime());
+
+      return { ok: true, data: { attendees, eventTitle: event.title } };
+    });
+  } catch (err) {
+    return { ok: false, error: normalizeError(err).message };
+  }
+}
+
+/** Whether the current user has an active RSVP for the event. */
+export async function getUserRsvpStatus(
+  eventId: string,
+  _organizerId?: string
+): Promise<{ ok: true; data: { isRsvped: boolean } } | { ok: false; error: string }> {
+  const session = await getDemoSession();
+  if (!session) return { ok: true, data: { isRsvped: false } };
+
+  try {
+    const isRsvped = await getStore().read((data) => {
+      const rsvp = data.rsvps[`${eventId}_${session.uid}`];
+      return !!rsvp && !rsvp.cancelledAt;
+    });
+    return { ok: true, data: { isRsvped } };
+  } catch (err) {
+    return { ok: false, error: normalizeError(err).message };
   }
 }
