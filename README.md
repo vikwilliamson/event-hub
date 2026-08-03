@@ -1,245 +1,95 @@
 # Event Hub
 
-A modern event discovery and RSVP application built with Next.js 15, TypeScript, and Firebase. Event Hub allows users to discover events, RSVP to attend, and organizers to manage their events seamlessly.
+A meetup-style event discovery and RSVP app built with Next.js 15, React 19, and TypeScript. Browse and search events by keyword, category, and location; RSVP with capacity enforcement; and manage your own events from an organizer dashboard — all with **zero sign-in and zero API keys**.
 
-## Features
-
-- **Event Discovery**: Browse upcoming and past events with intuitive filtering
-- **RSVP Management**: Users can RSVP to events and manage their attendance
-- **Organizer Dashboard**: Event organizers can create, edit, and manage their events
-- **Real-time Updates**: Live RSVP counts and event status updates
-- **Responsive Design**: Mobile-first design with accessibility in mind
-- **Secure Authentication**: Firebase-based authentication with proper session management
-- **Type Safety**: Full TypeScript implementation with Zod validation
-
-## Tech Stack
-
-- **Frontend**: Next.js 15, React 19, TypeScript, Tailwind CSS
-- **Backend**: Next.js API Routes, Firebase Admin SDK
-- **Database**: Firestore with optimized queries and security rules
-- **Authentication**: Firebase Auth with email/password
-- **Validation**: Zod schemas for type-safe data validation
-- **Testing**: Jest, Playwright for E2E testing
-- **Deployment**: Vercel-ready with environment configuration
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- npm or yarn
-- Firebase project (for production deployment)
-
-### Installation
-
-1. Clone the repository:
-
-```bash
-git clone https://github.com/yourusername/event-hub.git
-cd event-hub
-```
-
-2. Install dependencies:
+## Demo Quickstart
 
 ```bash
 npm install
-```
-
-3. Set up environment variables:
-
-```bash
-cp .env.example .env.local
-```
-
-4. Configure Firebase:
-   - Create a Firebase project at https://console.firebase.google.com
-   - Enable Authentication with Email/Password provider
-   - Create a Firestore Database
-   - Generate a service account private key
-   - Fill in your `.env.local` with the Firebase configuration
-
-5. Run the development server:
-
-```bash
+npm run seed   # ~12 realistic events across several US cities
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the application.
+Open [http://localhost:3000](http://localhost:3000). That's it — no `.env.local` needed.
+
+The demo runs entirely on a local JSON-file store (`data/eventhub-db.json`, gitignored). There is no login: middleware mints an anonymous `eh_uid` cookie on your first visit, and that identity scopes "My RSVPs" and your organizer dashboard per browser.
+
+## Features
+
+- **Event discovery**: browse upcoming and past events with server-rendered, shareable search URLs
+- **Search & location**: text, category, and city+radius filters; distance badges when a search center is active (pure haversine math — no geocoding API)
+- **Map view**: optional Google Maps view of results when `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is set; degrades to the list with a notice without it
+- **RSVP management**: RSVP/cancel with capacity enforcement, atomic counts, and re-RSVP after cancel
+- **Organizer dashboard**: create, edit, publish/unpublish, and cancel events; attendee list per event
+- **AI confirmation emails**: Claude-generated RSVP confirmations when `ANTHROPIC_API_KEY` and email keys are set (skipped otherwise)
+- **Accessibility**: skip links, `aria-live` updates, reduced-motion support, axe-checked components
 
 ## Environment Variables
 
-Create a `.env.local` file with the following variables:
+Every key is **optional** — the demo runs with an empty environment. Keys unlock extras:
 
-```env
-# Firebase Client (public)
-NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
-NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+| Variable | Unlocks |
+|---|---|
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Map view on `/events` |
+| `ANTHROPIC_API_KEY` | Claude-generated RSVP confirmation emails |
+| `EMAIL_PROVIDER_API_KEY`, `EMAIL_FROM_ADDRESS` | Email sending (Resend) |
+| `EVENTHUB_DATA_FILE` | Alternate path for the local JSON store |
+| `NEXT_PUBLIC_FIREBASE_*`, `FIREBASE_ADMIN_*` | Legacy — unused by the local-store runtime, kept for a future data-layer swap back to Firestore |
 
-# Firebase Admin (server-only)
-FIREBASE_ADMIN_PROJECT_ID=your-project-id
-FIREBASE_ADMIN_CLIENT_EMAIL=your-service-account@your-project.iam.gserviceaccount.com
-FIREBASE_ADMIN_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+## Tech Stack
 
-# Optional
-SESSION_COOKIE_NAME=session
-```
+- **Framework**: Next.js 15 (App Router, Server Actions), React 19, TypeScript
+- **Data**: JSON-file-backed store behind a small `Store` interface (`src/lib/store/`) — swapping back to Firestore is a data-layer change, not a rewrite
+- **Validation**: Zod schemas shared between forms (react-hook-form) and Server Actions
+- **Styling**: Tailwind CSS
+- **Testing**: Vitest (unit + integration against an in-memory store), Playwright (E2E), axe-core (a11y)
 
 ## Project Structure
 
 ```
 src/
-  app/                 # Next.js app router pages
-    (auth)/           # Authentication routes
-    (public)/         # Public event pages
-    (organizer)/      # Organizer dashboard
-    api/              # API routes
-  components/         # Reusable React components
-    auth/            # Authentication components
-    event/           # Event-related components
-    ui/              # Base UI components
-  lib/               # Utility libraries
-    actions/         # Server actions
-    firebase/        # Firebase configuration
-    validations/     # Zod schemas
-  hooks/             # Custom React hooks
-  test/              # Test files
+  app/
+    (public)/        # Browse, event detail, my RSVPs
+    (organizer)/     # Dashboard: create/edit/cancel events, attendees
+  components/
+    event/           # Cards, forms, search form, map
+    ui/              # Base UI primitives (button, input, toast, …)
+  lib/
+    actions/         # Server Actions (events, RSVPs)
+    store/           # Store interface + JsonFileStore / MemoryStore
+    geo.ts           # Haversine distance, radius filtering
+    search.ts        # Event search + URL param parsing
+    cities.ts        # Preset search centers
+    session.ts       # Anonymous demo identity (eh_uid cookie)
+    email/           # Email templates + Claude-powered confirmation
+  test/              # Unit + integration tests, factories
+scripts/seed.ts      # npm run seed
 ```
 
-## Database Schema
+## Data Model
 
-The application uses Firestore with the following structure:
-
-```
-organizers/
-  {organizerId}/
-    events/
-      {eventId}/
-        title: string
-        description: string
-        location: string
-        startsAt: Date
-        endsAt?: Date
-        capacity?: number
-        status: "published" | "draft" | "cancelled"
-        rsvpCount: number
-        organizerId: string
-        organizerName: string
-        createdAt: Date
-        updatedAt: Date
-        publishedAt?: Date
-        cancelledAt?: Date
-    rsvps/
-      {userId}/
-        eventId: string
-        userId: string
-        organizerId: string
-        createdAt: Date
-        cancelledAt?: Date
-```
-
-## Key Features & Optimizations
-
-- **Optimized Queries**: Uses Firestore collection group queries to avoid N+1 problems
-- **Caching**: In-memory caching for RSVP status to reduce database calls
-- **Error Boundaries**: Comprehensive error handling with user-friendly fallbacks
-- **Loading States**: Proper loading and empty states throughout the application
-- **Accessibility**: ARIA labels, semantic HTML, and keyboard navigation
-- **Type Safety**: End-to-end TypeScript with Zod runtime validation
+One flat `events` collection with an `organizerId` field; RSVPs keyed `${eventId}_${userId}`; users created lazily from the demo session. Dates persist as ISO strings and revive to `Date` on load. See `src/lib/types.ts` for the canonical types.
 
 ## Testing
 
-Run the test suite:
-
 ```bash
-# Unit tests
-npm test
-
-# E2E tests
-npm run test:e2e
-
-# Accessibility tests
-npm run test:a11y
+npm test                  # all Vitest suites (unit + integration)
+npm run test:unit         # geo, search, store, schema, a11y units
+npm run test:integration  # Server Actions against MemoryStore
+npm run test:e2e          # Playwright
 ```
+
+Integration tests substitute a `MemoryStore` via `setStore()` and a stubbed session — no external services, no emulators.
 
 ## Deployment
 
-### Vercel (Recommended)
-
-1. Connect your repository to Vercel
-2. Add environment variables in Vercel dashboard:
-   - `NEXT_PUBLIC_FIREBASE_API_KEY`
-   - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
-   - `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
-   - `NEXT_PUBLIC_FIREBASE_APP_ID`
-   - `FIREBASE_ADMIN_PROJECT_ID`
-   - `FIREBASE_ADMIN_CLIENT_EMAIL`
-   - `FIREBASE_ADMIN_PRIVATE_KEY`
-3. Deploy automatically on push to main branch
-
-### Manual Deployment
-
 ```bash
-# Build for production
 npm run build
-
-# Start production server
 npm start
 ```
 
-### Docker Deployment
-
-```dockerfile
-# Dockerfile
-FROM node:18-alpine AS base
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-
-FROM base AS builder
-COPY . .
-RUN npm run build
-
-FROM base AS runner
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/package*.json ./
-EXPOSE 3000
-CMD ["npm", "start"]
-```
-
-### Environment Setup for Production
-
-1. **Firebase Configuration**:
-   - Ensure your Firebase project is in production mode
-   - Configure proper security rules
-   - Set up Firestore indexes for query optimization
-
-2. **Domain Configuration**:
-   - Add authorized domains in Firebase Auth
-   - Configure CORS if needed
-   - Set up SSL certificates
-
-3. **Monitoring**:
-   - Enable Firebase monitoring
-   - Set up error reporting
-   - Configure performance monitoring
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit your changes: `git commit -m 'Add amazing feature'`
-4. Push to the branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+Note the local JSON store is per-instance; for a multi-instance or serverless deployment, swap the `Store` implementation for a real database first.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Built with [Next.js](https://nextjs.org/)
-- Authentication by [Firebase](https://firebase.google.com/)
-- Styled with [Tailwind CSS](https://tailwindcss.com/)
+MIT — see [LICENSE](LICENSE).
