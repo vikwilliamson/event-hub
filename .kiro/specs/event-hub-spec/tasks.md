@@ -134,8 +134,8 @@ These items are defined in the PRD or architecture but not yet built.
 - [x] **TASK-28: Add `aria-live` region for RSVP count updates**
   - Done: RSVP count `<div>` has `aria-live="polite" aria-atomic="true"`; SVG icon has `aria-hidden="true"`
 
-- [ ] **TASK-29: Verify and fix color contrast across all routes**
-  - Work: Run Lighthouse and `axe-core` on `/events`, `/events/[id]`, `/login`, `/register`, `/dashboard`; fix any contrast failures; document results in `docs/accessibility-testing-checklist.md`
+- [x] **TASK-29: Verify and fix color contrast across all routes**
+  - Done (2026-08-03): `axe-core` color-contrast scan (via `@axe-core/playwright`) of `/`, `/events`, `/events/[id]`, `/dashboard`, `/dashboard/events/new` — 0 violations. Transient status colors (amber/red/green) not on the page during a static scan were verified by computing WCAG ratios from the Tailwind palette: all pass AA. Only borderline is `green-600` stat numbers (3.30:1), which pass as large text (`text-3xl` bold). No fixes required. Full results table in `docs/accessibility-testing-checklist.md`. (`/login`/`/register` from the original scope were removed by the demo refactor.)
   - Refs: REQ-A11Y-3
 
 - [x] **TASK-30: Add `@media (prefers-reduced-motion)` to all transitions**

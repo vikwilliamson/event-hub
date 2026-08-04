@@ -47,6 +47,10 @@ test.describe("Demo smoke", () => {
     // --- Create + publish ---
     await page.goto("/dashboard/events/new");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Create event");
+    // Publishing is a client action (react-hook-form). Wait for the client
+    // bundle to load/hydrate before submitting, or a cold dev-mode compile can
+    // let the click fire a native form submit that never creates the event.
+    await page.waitForLoadState("networkidle");
 
     await page.getByLabel("Title").fill(title);
     await page.getByLabel("Description").fill("A relaxed evening on the rooftop with music and friends.");
@@ -69,6 +73,8 @@ test.describe("Demo smoke", () => {
     await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
     await expect(page.getByText("0 people going")).toBeVisible();
 
+    // RSVP is a client onClick — wait for hydration before pressing it.
+    await page.waitForLoadState("networkidle");
     await page.getByRole("button", { name: "RSVP to this event" }).click();
 
     // Button flips to Going + Cancel, and the count increments (unique event → 1).

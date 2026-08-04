@@ -1,5 +1,37 @@
 # EventHub Manual Accessibility Testing Checklist
 
+## 🎨 Color-Contrast Audit (TASK-29) — 2026-08-03
+
+**Result: PASS.** All demo routes meet WCAG 2.1 AA contrast; no failures found, no fixes required.
+
+**Method.** `@axe-core/playwright` was run with *only* the `color-contrast` rule enabled against `/`, `/events`, an event detail page, `/dashboard`, and `/dashboard/events/new` (the demo replaced `/login` and `/register` with the demo identity, so those routes from the original TASK-29 scope no longer exist). Because axe only scans text that is actually rendered over a detectable solid background, the transient status colors the palette uses in error/badge states (amber/red/green) were also checked directly by computing WCAG contrast ratios from the Tailwind palette hex values.
+
+**axe scan:** 0 color-contrast violations on all five routes.
+
+**Computed ratios for the palette's flagged pairs** (AA threshold: 4.5:1 normal text, 3:1 large text ≥24px or ≥18.66px bold):
+
+| Foreground / background | Ratio | Context | Verdict |
+|---|---|---|---|
+| `amber-700` on white | 5.02:1 | form "draft with AI" status message | AA pass |
+| `red-700` on white | 6.47:1 | inline RSVP error | AA pass |
+| `red-800` on `red-100` | 6.80:1 | cancelled/confirmed badge (xs) | AA pass |
+| `red-800` on `red-50` | 7.60:1 | form root error | AA pass |
+| `green-800` on `green-100` | 6.49:1 | confirmed badge (xs) | AA pass |
+| `red-600` on white | 4.83:1 | field/my-rsvps error | AA pass |
+| `neutral-500` on white | 4.74:1 | "(optional)" field labels | AA pass |
+| `neutral-600` on white | 7.81:1 | body copy | AA pass |
+| `neutral-600` on `neutral-50` | 7.49:1 | search-form copy on tinted bg | AA pass |
+| `neutral-700` on `neutral-100` | 9.51:1 | distance badge (xs) | AA pass |
+| `blue-600` on white | 5.17:1 | stat number (3xl bold) | AA pass |
+| `purple-600` on white | 5.38:1 | stat number (3xl bold) | AA pass |
+| `green-600` on white | 3.30:1 | stat number (3xl bold) | AA pass **as large text** |
+
+**One thing to know:** the `green-600` stat number ("Published" on `/dashboard`, "Confirmed" on `/my-rsvps`) is 3.30:1 on white — below the 4.5:1 normal-text bar but above the 3:1 large-text bar, and it is only ever rendered at `text-3xl font-bold` (30px bold), so it qualifies as large text and passes AA. It is the only pair relying on the large-text exemption; if any future use puts `green-600` on smaller text, bump it to `green-700` (5.0:1 on white).
+
+Two unrelated ARIA violations surfaced by the (separate) axe scans during this work were fixed alongside: `role="status"` added to the toast region, and an sr-only `h2` added to the dashboard to fix heading order. See `docs/task-breakdown.md` §8.
+
+---
+
 ## 🔧 Setup Instructions
 
 ### Screen Reader Setup
