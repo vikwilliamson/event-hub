@@ -33,6 +33,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Stats Cards */}
+      <h2 className="sr-only">Overview</h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white rounded-lg border border-neutral-200 p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-neutral-900 mb-2">Total Events</h3>
