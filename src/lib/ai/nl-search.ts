@@ -24,27 +24,27 @@ const extractionSchema = z.object({
 });
 
 /** JSON Schema for the structured-output response (mirrors extractionSchema). */
-const EXTRACTION_JSON_SCHEMA = {
+export const EXTRACTION_JSON_SCHEMA = {
   type: "object",
   properties: {
     text: {
-      type: ["string", "null"],
+      anyOf: [{ type: "string" }, { type: "null" }],
       description:
         "Keywords to match against event titles/descriptions/venues. Null if the query is purely locational or categorical.",
     },
     category: {
-      type: ["string", "null"],
-      enum: [...EVENT_CATEGORIES, null],
+      // Nullable enums must be expressed with anyOf: the structured-output
+      // validator rejects `enum` combined with an array-form type union.
+      anyOf: [{ type: "string", enum: [...EVENT_CATEGORIES] }, { type: "null" }],
       description: "Event category, only when clearly implied.",
     },
     city: {
-      type: ["string", "null"],
-      enum: [...CITIES.map((c) => c.slug), null],
+      anyOf: [{ type: "string", enum: [...CITIES.map((c) => c.slug)] }, { type: "null" }],
       description:
         "Closest supported city when the query mentions a place. Null when no location is mentioned or none is close.",
     },
     radiusKm: {
-      type: ["number", "null"],
+      anyOf: [{ type: "number" }, { type: "null" }],
       description:
         "Search radius in km, only when the query implies one (e.g. 'within 10 miles'). Null otherwise.",
     },
