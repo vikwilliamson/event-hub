@@ -30,7 +30,13 @@ export const EXTRACTION_JSON_SCHEMA = {
     text: {
       anyOf: [{ type: "string" }, { type: "null" }],
       description:
-        "Keywords to match against event titles/descriptions/venues. Null if the query is purely locational or categorical.",
+        "Distinctive content keyword(s) matched as a literal, case-insensitive " +
+        "substring against event title/description/venue and AND-ed with the other " +
+        "filters. Use only for specific words likely to appear verbatim in an event " +
+        "(e.g. 'salsa', 'kayak', 'jazz'). Null when the query is already covered by " +
+        "category and/or city, or when the leftover words are generic qualifiers that " +
+        "won't appear in event text (e.g. 'free', 'cheap', 'fun', 'cool', 'best', " +
+        "'events', 'things to do', 'activities', 'this weekend', 'near me').",
     },
     category: {
       // Nullable enums must be expressed with anyOf: the structured-output
@@ -103,7 +109,16 @@ export async function parseNaturalSearch(query: string): Promise<URLSearchParams
         system:
           "Convert a natural-language event search into a structured filter for a local events app. " +
           "Extract only what the query states or clearly implies; use null for anything absent. " +
-          "Map place names to the closest supported city; convert miles to kilometers.",
+          "Map place names to the closest supported city; convert miles to kilometers. " +
+          "The `text` field is matched as a literal, case-insensitive substring against each " +
+          "event's title, description, and venue, and is combined with the other filters using AND — " +
+          "so a `text` value that does not appear verbatim in an event removes it from the results. " +
+          "Put ONLY distinctive content words in `text` (activity types, topics, or proper nouns " +
+          "likely to appear in an event, e.g. 'salsa', 'kayak', 'jazz'). Leave `text` null when the " +
+          "query is already captured by category and/or city, or when the remaining words are generic " +
+          "qualifiers that won't appear in event text (e.g. 'free', 'cheap', 'fun', 'cool', 'best', " +
+          "'events', 'things to do', 'activities', 'this weekend', 'near me'). The app has no price " +
+          "filter, so ignore affordability words like 'free' or 'cheap' rather than putting them in `text`.",
         output_config: {
           format: {
             type: "json_schema",
