@@ -15,9 +15,11 @@ vi.mock("@/lib/env", () => ({
 import {
   extractionToSearchParams,
   parseNaturalSearch,
+  widenSearchParamsIfEmpty,
   EXTRACTION_JSON_SCHEMA,
 } from "@/lib/ai/nl-search";
 import { generateEventDescription } from "@/lib/ai/describe-event";
+import { makeEvent, daysFromNow } from "../factories/factories";
 
 const textResponse = (text: string) => ({
   stop_reason: "end_turn",
@@ -117,6 +119,57 @@ describe("EXTRACTION_JSON_SCHEMA (structured-output validity)", () => {
         branches.some((b) => b.type === "null");
       expect(nullable, `${name} must permit null`).toBe(true);
     }
+  });
+});
+
+describe("widenSearchParamsIfEmpty", () => {
+  const DENVER = { lat: 39.7392, lng: -104.9903 };
+  const events = [
+    makeEvent({
+      id: "tech-denver",
+      title: "Denver TypeScript Meetup",
+      description: "Monthly TS talks",
+      location: "Denver, CO",
+      category: "tech",
+      lat: DENVER.lat,
+      lng: DENVER.lng,
+      startsAt: daysFromNow(3),
+    }),
+  ];
+
+  it("drops a spurious q that zeros out results when category/near still match", () => {
+    // q=free matches nothing, but category=tech near=denver matches the meetup.
+    const params = new URLSearchParams("q=free&category=tech&near=denver");
+    const widened = widenSearchParamsIfEmpty(params, events);
+    expect(Object.fromEntries(widened)).toEqual({ category: "tech", near: "denver" });
+  });
+
+  it("keeps q when the full search still returns results", () => {
+    const params = new URLSearchParams("q=typescript&category=tech&near=denver");
+    const widened = widenSearchParamsIfEmpty(params, events);
+    expect(Object.fromEntries(widened)).toEqual({
+      q: "typescript",
+      category: "tech",
+      near: "denver",
+    });
+  });
+
+  it("does not widen a pure text search with no other filter to fall back to", () => {
+    const params = new URLSearchParams("q=nonexistent");
+    const widened = widenSearchParamsIfEmpty(params, events);
+    expect(Object.fromEntries(widened)).toEqual({ q: "nonexistent" });
+  });
+
+  it("returns params unchanged when there is no q", () => {
+    const params = new URLSearchParams("category=tech&near=denver");
+    const widened = widenSearchParamsIfEmpty(params, events);
+    expect(Object.fromEntries(widened)).toEqual({ category: "tech", near: "denver" });
+  });
+
+  it("does not mutate the input params", () => {
+    const params = new URLSearchParams("q=free&category=tech&near=denver");
+    widenSearchParamsIfEmpty(params, events);
+    expect(params.get("q")).toBe("free");
   });
 });
 

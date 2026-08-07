@@ -2,7 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { env } from "@/lib/env";
 import { CITIES, findCity } from "@/lib/cities";
-import { EVENT_CATEGORIES } from "@/lib/types";
+import { EVENT_CATEGORIES, type Event } from "@/lib/types";
+import { parseEventSearchParams, searchEvents } from "@/lib/search";
 
 const TIMEOUT_MS = 8000;
 const MODEL = "claude-opus-4-8";
@@ -92,6 +93,32 @@ export function extractionToSearchParams(
     }
   }
   return params;
+}
+
+/**
+ * Safety net for the NL path: if the extracted search returns nothing but a
+ * distinctive `q` term is combined with a category/city, the `q` is most likely
+ * a spurious keyword the model couldn't map (the app has no price/date filters,
+ * so words like "free" or "tonight" land in `q` and then AND out every match).
+ * Retry once without `q`; if that yields results, prefer the widened params.
+ * Only widens when there is another filter to fall back to — a bare `q` search
+ * that finds nothing is a legitimate empty result, not something to broaden.
+ */
+export function widenSearchParamsIfEmpty(
+  params: URLSearchParams,
+  events: Event[]
+): URLSearchParams {
+  if (!params.get("q") || !(params.has("category") || params.has("near"))) {
+    return params;
+  }
+  if (searchEvents(events, parseEventSearchParams(Object.fromEntries(params))).length > 0) {
+    return params;
+  }
+  const widened = new URLSearchParams(params);
+  widened.delete("q");
+  return searchEvents(events, parseEventSearchParams(Object.fromEntries(widened))).length > 0
+    ? widened
+    : params;
 }
 
 export async function parseNaturalSearch(query: string): Promise<URLSearchParams> {

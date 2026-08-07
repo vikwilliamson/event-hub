@@ -1,7 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { parseNaturalSearch } from "@/lib/ai/nl-search";
+import { parseNaturalSearch, widenSearchParamsIfEmpty } from "@/lib/ai/nl-search";
+import { getAllPublishedEvents } from "@/lib/events-public";
 import {
   generateEventDescription,
   type DescribeEventResult,
@@ -28,10 +29,16 @@ export async function draftEventDescription(input: {
  */
 export async function nlSearch(formData: FormData): Promise<void> {
   const query = formData.get("ask");
-  const params =
+  let params =
     typeof query === "string" && query.trim()
       ? await parseNaturalSearch(query.slice(0, 300))
       : new URLSearchParams();
+
+  // Safety net: if a spurious keyword AND-ed out every match, retry without it.
+  if (params.get("q") && (params.has("category") || params.has("near"))) {
+    params = widenSearchParamsIfEmpty(params, await getAllPublishedEvents());
+  }
+
   const suffix = params.toString();
   redirect(suffix ? `/events?${suffix}` : "/events");
 }

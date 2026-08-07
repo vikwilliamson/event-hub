@@ -30,6 +30,12 @@ test.describe("Accessibility Automated Checks", () => {
     await checkNoViolations(new AxeBuilder({ page }));
   });
 
+  test("My RSVPs page should be accessible", async ({ page }) => {
+    await page.goto("/my-rsvps");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("My RSVPs");
+    await checkNoViolations(new AxeBuilder({ page }));
+  });
+
   test("dashboard should be accessible", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Dashboard");

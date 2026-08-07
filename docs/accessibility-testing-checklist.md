@@ -1,5 +1,13 @@
 # EventHub Manual Accessibility Testing Checklist
 
+## 🤖 Full Automated axe-core Audit — 2026-08-06
+
+**Result: PASS — 0 violations.** Ran `@axe-core/playwright` with the **full WCAG 2.0/2.1 A & AA ruleset plus best-practices and color-contrast** (`withTags(["wcag2a","wcag2aa","wcag21a","wcag21aa","best-practice"])`) across every key route — `/`, `/events`, an event detail page, `/my-rsvps`, `/dashboard`, `/dashboard/events/new` — and the create form in its validation-error state. Zero violations of any impact.
+
+Getting to zero fixed three real issues found along the way (all committed): the toast region's `aria-label` on a role-less div (→ `role="status"`), and an h1→h3 heading skip on both `/dashboard` and `/my-rsvps` (→ an sr-only `h2` "Overview"). The permanent `src/test/e2e/accessibility.spec.ts` now scans all six routes on every E2E run (color-contrast excluded there and covered by the dedicated audit below).
+
+---
+
 ## 🎨 Color-Contrast Audit (TASK-29) — 2026-08-03
 
 **Result: PASS.** All demo routes meet WCAG 2.1 AA contrast; no failures found, no fixes required.
