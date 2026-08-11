@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { Redis } from "@upstash/redis";
 import type { Event, Rsvp, User } from "@/lib/types";
 import { env } from "@/lib/env";
 
@@ -99,6 +100,50 @@ export class JsonFileStore implements Store {
   }
 }
 
+/**
+ * Minimal string get/set surface — the subset of the Upstash Redis REST client
+ * KvStore needs. Kept as an interface so the store is testable with a fake.
+ */
+export interface KvClient {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<unknown>;
+}
+
+/**
+ * Serverless-friendly store: the whole StoreData blob lives under one KV key.
+ * Unlike JsonFileStore there is no long-lived in-memory cache — every read and
+ * mutate loads fresh from KV, so writes from other instances are always seen
+ * (a warm instance never serves stale data). Mutations are read-modify-write
+ * with last-writer-wins, matching JsonFileStore's whole-file semantics.
+ */
+export class KvStore implements Store {
+  private queue = new TaskQueue();
+
+  constructor(
+    private readonly kv: KvClient,
+    private readonly key = "eventhub:store"
+  ) {}
+
+  private async load(): Promise<StoreData> {
+    const raw = await this.kv.get(this.key);
+    if (!raw) return emptyData();
+    return { ...emptyData(), ...(JSON.parse(raw, reviveDates) as StoreData) };
+  }
+
+  read<T>(fn: (data: StoreData) => T): Promise<T> {
+    return this.queue.run(async () => fn(await this.load()));
+  }
+
+  mutate<T>(fn: (data: StoreData) => T | Promise<T>): Promise<T> {
+    return this.queue.run(async () => {
+      const data = await this.load();
+      const result = await fn(data);
+      await this.kv.set(this.key, JSON.stringify(data));
+      return result;
+    });
+  }
+}
+
 const DEFAULT_DATA_FILE = path.join(process.cwd(), "data", "eventhub-db.json");
 
 // Survives Next.js dev-server module reloads; also the seam tests use to
@@ -107,11 +152,30 @@ const globalStore = globalThis as { __eventhubStore?: Store | null };
 
 export function getStore(): Store {
   if (!globalStore.__eventhubStore) {
-    globalStore.__eventhubStore = new JsonFileStore(
-      env.EVENTHUB_DATA_FILE ?? DEFAULT_DATA_FILE
-    );
+    globalStore.__eventhubStore = createStore();
   }
   return globalStore.__eventhubStore;
+}
+
+/**
+ * Picks the store backend from the environment: Vercel KV / Upstash Redis when
+ * its REST credentials are present (required on serverless, where the local
+ * JSON file is not writable), otherwise the local JSON file for dev and demos.
+ */
+function createStore(): Store {
+  const url = env.KV_REST_API_URL ?? env.UPSTASH_REDIS_REST_URL;
+  const token = env.KV_REST_API_TOKEN ?? env.UPSTASH_REDIS_REST_TOKEN;
+  if (url && token) {
+    // automaticDeserialization: false → get/set exchange raw JSON strings so
+    // KvStore controls Date revival, exactly as the file store does.
+    const redis = new Redis({ url, token, automaticDeserialization: false });
+    const kv: KvClient = {
+      get: (key) => redis.get<string>(key),
+      set: (key, value) => redis.set(key, value),
+    };
+    return new KvStore(kv);
+  }
+  return new JsonFileStore(env.EVENTHUB_DATA_FILE ?? DEFAULT_DATA_FILE);
 }
 
 export function setStore(store: Store | null): void {

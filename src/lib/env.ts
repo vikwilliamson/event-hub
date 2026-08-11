@@ -25,6 +25,17 @@ const envSchema = z.object({
   // Local store
   EVENTHUB_DATA_FILE: z.string().optional(),
 
+  // Serverless store (Vercel KV / Upstash Redis REST). When both URL and token
+  // are set, the app uses KV instead of the local JSON file. Vercel's KV
+  // integration sets the KV_* pair; the Upstash marketplace sets UPSTASH_*.
+  KV_REST_API_URL: z.string().url("KV REST API URL must be a valid URL").optional(),
+  KV_REST_API_TOKEN: z.string().optional(),
+  UPSTASH_REDIS_REST_URL: z
+    .string()
+    .url("Upstash Redis REST URL must be a valid URL")
+    .optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+
   // Email
   EMAIL_PROVIDER_API_KEY: z.string().optional(),
   EMAIL_FROM_ADDRESS: z.string().email("Email from address must be valid").optional(),
